@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Login with DID - Polly{% endblock %}
+
+{% block content %}
+    <div class="bg-white shadow rounded-lg p-6 max-w-md mx-auto">
+        <h2 class="text-2xl font-bold text-gray-900 mb-6 text-center">Login with DID</h2>
+
+        {% if error %}
+            {% include "partials/_alert.html" with type="error" message=error %}
+        {% endif %}
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+
+            <div>
+                <label for="did" class="block text-sm font-medium text-gray-700">Decentralized Identifier (DID)</label>
+                <input
+                    type="text"
+                    name="did"
+                    id="did"
+                    required
+                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-[color:var(--primary-color)] focus:border-[color:var(--primary-color)]"
+                    placeholder="did:key:example123456789"
+                >
+            </div>
+
+            <div>
+                <label for="vc" class="block text-sm font-medium text-gray-700">Verifiable Credential (VC)</label>
+                <textarea
+                    name="vc"
+                    id="vc"
+                    rows="5"
+                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-[color:var(--primary-color)] focus:border-[color:var(--primary-color)]"
+                    placeholder='{"@context": "https://www.w3.org/2018/credentials/v1", "type": "VerifiableCredential", ...}'
+                ></textarea>
+                <p class="mt-1 text-sm text-gray-500">
+                    Paste your Verifiable Credential (VC) as a JSON string.
+                </p>
+            </div>
+
+            <div>
+                <label for="vc_proof" class="block text-sm font-medium text-gray-700">VC Proof</label>
+                <textarea
+                    name="vc_proof"
+                    id="vc_proof"
+                    rows="3"
+                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-[color:var(--primary-color)] focus:border-[color:var(--primary-color)]"
+                    placeholder='{"type": "Ed25519Signature2020", "proofPurpose": "authentication", ...}'
+                ></textarea>
+                <p class="mt-1 text-sm text-gray-500">
+                    Paste the proof for your VC as a JSON string.
+                </p>
+            </div>
+
+            <div>
+                <button
+                    type="submit"
+                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[color:var(--primary-color)] hover:bg-[color:var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[color:var(--primary-focus)]"
+                >
+                    Login
+                </button>
+            </div>
+        </form>
+
+        <div class="mt-6 text-center">
+            <p class="text-sm text-gray-600">
+                Don't have a DID? <a href="{% url 'register' %}" class="text-[color:var(--primary-color)] hover:underline">Register</a>
+            </p>
+            <p class="text-sm text-gray-600 mt-2">
+                Or <a href="{% url 'login' %}" class="text-[color:var(--primary-color)] hover:underline">login with username</a>
+            </p>
+        </div>
+    </div>
+{% endblock %}

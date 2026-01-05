@@ -16,10 +16,31 @@ Including another URLconf
 """
 
 from django.contrib import admin
+from django.contrib.auth import views as auth_views
 from django.urls import include, path
+
+from apps.accounts.views import DIDLoginView, RegisterView, VCManagementView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.core.urls")),
     path("", include("apps.poller.urls")),
+    path("__debug__/", include("debug_toolbar.urls")),  # Django Debug Toolbar
+    path(
+        "login/",
+        auth_views.LoginView.as_view(template_name="registration/login.html"),
+        name="login",
+    ),
+    path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("register/", RegisterView.as_view(), name="register"),
+    path(
+        "login/did/",
+        DIDLoginView.as_view(),
+        name="did_login",
+    ),
+    path(
+        "accounts/vcs/",
+        VCManagementView.as_view(),
+        name="vc_management",
+    ),
 ]

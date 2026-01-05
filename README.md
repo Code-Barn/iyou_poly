@@ -123,7 +123,27 @@ To run the test suite:
 python manage.py test
 ```
 
+## Front-End Development
+Polly now includes a front-end built with Django Templates and HTMX for dynamic interactions. Here’s what’s available:
+
+### Features
+- **Poll List**: View all active polls at `http://localhost:8000/`.
+- **Poll Detail**: View and vote on individual polls at `http://localhost:8000/<poll_id>/`.
+- **Authentication**: Log in and out using the links in the header.
+- **Voting**: Cast votes dynamically without a full page reload.
+
+### Testing Front-End Functionality
+The test suite includes tests for the front-end views and API endpoints. To run the tests:
+```bash
+python manage.py test
+```
+
 ## Usage
+
+### Front-End
+- **Poll List**: Visit `http://localhost:8000/` to view all active polls.
+- **Poll Detail**: Click on a poll to view its details and vote.
+- **Authentication**: Use the login/logout links in the header to authenticate.
 
 ### Core API Endpoints
 

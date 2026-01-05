@@ -38,7 +38,7 @@ class PollAdmin(admin.ModelAdmin):
     )
     list_filter = ("geographical_scope", "is_active", "created_by")
     search_fields = ("title", "description", "created_by__username")
-    raw_id_fields = ("created_by",)
+    autocomplete_fields = ("created_by",)
     ordering = ("-created_at",)
 
 
@@ -51,7 +51,7 @@ class PollOptionAdmin(admin.ModelAdmin):
     list_display = ("poll", "text", "votes", "created_at", "updated_at")
     list_filter = ("poll",)
     search_fields = ("text", "poll__title")
-    raw_id_fields = ("poll",)
+    autocomplete_fields = ("poll",)
     ordering = ("poll", "text")
 
 

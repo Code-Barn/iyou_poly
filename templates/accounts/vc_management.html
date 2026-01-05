@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Verifiable Credentials - Polly{% endblock %}
+
+{% block content %}
+    <div class="bg-white shadow rounded-lg p-6 max-w-4xl mx-auto">
+        <h2 class="text-2xl font-bold text-gray-900 mb-6">Verifiable Credentials</h2>
+
+        {% if auth_vc %}
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">Authentication Credential</h3>
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <pre class="text-sm text-gray-700 overflow-x-auto">{{ auth_vc|json_script:"auth-vc" }}</pre>
+                </div>
+            </div>
+        {% else %}
+            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                <p class="text-yellow-700">
+                    No authentication credential found. Please contact support.
+                </p>
+            </div>
+        {% endif %}
+
+        <div>
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">All Credentials</h3>
+            {% if vcs %}
+                <div class="space-y-4">
+                    {% for vc in vcs %}
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <pre class="text-sm text-gray-700 overflow-x-auto">{{ vc|json_script:"vc-"|add:forloop.counter }}</pre>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-gray-500">No verifiable credentials found.</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock %}

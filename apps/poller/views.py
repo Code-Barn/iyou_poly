@@ -1,16 +1,24 @@
 """
-API views for the `poller` app.
+Views for the `poller` app.
 
-This module defines API views for managing polls and votes in the Polly project.
-These views provide endpoints for creating, retrieving, updating, and deleting polls,
-as well as casting and retrieving votes.
+This module defines views for rendering polls, managing poll-related functionality,
+and creating polls in the Polly project. It includes both API views and template views
+for server-side rendering.
+
 """
+
+import logging
+
+from django.shortcuts import redirect, render
+
+logger = logging.getLogger(__name__)
 
 import json
 
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ObjectDoesNotExist
 from django.http import JsonResponse
+from django.shortcuts import render
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -71,7 +79,51 @@ def vote_api(request, poll_id):
     Returns:
         JsonResponse: A JSON response containing the result of the API call.
     """
-    return cast_vote(request, poll_id)
+    logger.debug(f"Vote API called for poll_id: {poll_id}")
+    logger.debug(f"Request method: {request.method}")
+    logger.debug(f"Request headers: {request.headers}")
+    logger.debug(f"User authenticated: {request.user.is_authenticated}")
+    logger.debug(f"User: {request.user}")
+
+    # Handle JSON data
+    if request.content_type == "application/json":
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            return JsonResponse(
+                {"status": "error", "message": "Invalid JSON data."},
+                status=400,
+            )
+    else:
+        data = request.POST
+
+    return cast_vote(request, poll_id, data)
+
+    # Handle form data or JSON data
+    if request.content_type == "application/json":
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            return JsonResponse(
+                {"status": "error", "message": "Invalid JSON data."},
+                status=400,
+            )
+    else:
+        data = request.POST
+
+    logger.debug(f"Request data: {data}")
+    response = cast_vote(request, poll_id, data)
+
+    # If the vote was successful, return the updated vote results
+    if response.status_code == 200:
+        poll = Poll.objects.prefetch_related("options", "votes").get(
+            id=poll_id, is_active=True
+        )
+        return render(request, "poller/partials/vote_results.html", {"poll": poll})
+
+    return response
 
 
 @csrf_exempt
@@ -317,13 +369,14 @@ def delete_poll(request, poll_id):
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
-def cast_vote(request, poll_id):
+def cast_vote(request, poll_id, data):
     """
     Cast a vote in a poll.
 
     Args:
         request: The HTTP request object.
         poll_id: The ID of the poll.
+        data: The request data (form or JSON).
 
     Returns:
         JsonResponse: A JSON response confirming the vote.
@@ -331,12 +384,18 @@ def cast_vote(request, poll_id):
     try:
         user = request.user if request.user.is_authenticated else None
         if not user:
+            logger.debug("User not authenticated")
             return JsonResponse(
-                {"status": "error", "message": "Authentication required."}, status=401
+                {"status": "error", "message": "You must be logged in to vote."},
+                status=401,
             )
 
-        data = json.loads(request.body)
-        option_id = data.get("option_id")
+        # Handle both form data and JSON data
+        if isinstance(data, dict):
+            option_id = data.get("option_id")
+        else:
+            option_id = data.get("option_id") or json.loads(data).get("option_id")
+
         if not option_id:
             return JsonResponse(
                 {"status": "error", "message": "Option ID is required."}, status=400
@@ -411,3 +470,91 @@ def get_votes(request, poll_id):
         )
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def poll_list(request):
+    """
+    Render a list of active polls.
+
+    Args:
+        request: The HTTP request object.
+
+    Returns:
+        HttpResponse: A rendered template response containing the list of polls.
+    """
+    polls = Poll.objects.filter(is_active=True).prefetch_related("options", "votes")
+    return render(request, "poller/poll_list.html", {"polls": polls})
+
+
+class CreatePollView(View):
+    """
+    View for creating a new poll.
+
+    This view handles the creation of new polls by rendering a form and processing
+    the form submission.
+    """
+
+    def get(self, request):
+        """Render the poll creation form."""
+        if not request.user.is_authenticated:
+            return redirect("login")
+        return render(request, "poller/poll_create.html")
+
+    def post(self, request):
+        """Process the poll creation form submission."""
+        if not request.user.is_authenticated:
+            return redirect("login")
+
+        title = request.POST.get("title")
+        description = request.POST.get("description")
+        options = request.POST.get("options").split("\n")
+
+        if not title or not options:
+            return render(
+                request,
+                "poller/poll_create.html",
+                {"error": "Title and options are required."},
+            )
+
+        poll = Poll.objects.create(
+            title=title,
+            description=description,
+            created_by=request.user,
+            geographical_scope=GeographicalScope.objects.get(name="local"),
+        )
+
+        for option_text in options:
+            if option_text.strip():
+                PollOption.objects.create(poll=poll, text=option_text.strip())
+
+        return redirect("poll_detail", poll_id=poll.id)
+
+
+def poll_detail(request, poll_id):
+    """
+    Render a single poll and its voting options.
+
+    Args:
+        request: The HTTP request object.
+        poll_id: The ID of the poll to render.
+
+    Returns:
+        HttpResponse: A rendered template response containing the poll details.
+    """
+    try:
+        poll = Poll.objects.prefetch_related("options", "votes").get(
+            id=poll_id, is_active=True
+        )
+        user_vote = None
+        if request.user.is_authenticated:
+            user_vote = Vote.objects.filter(poll=poll, user=request.user).first()
+        return render(
+            request,
+            "poller/poll_detail.html",
+            {
+                "poll": poll,
+                "user_vote": user_vote,
+            },
+        )
+    except Poll.DoesNotExist:
+        return render(request, "poller/poll_not_found.html", status=404)

@@ -90,21 +90,13 @@ def sync_poll(poll, created=False):
             # Update the existing federated data entry
             federated_data.data = poll_data
             # Only increment version if the poll was not just created
-            if not created:
-                federated_data.version += 1
+            federated_data.version += 1
             federated_data.is_active = poll.is_active
             federated_data.save()
     except Exception as e:
         # Log the error and continue without synchronization
         print(f"Error synchronizing poll: {e}")
         return
-
-    if not created:
-        # Update the existing federated data entry
-        federated_data.data = poll_data
-        federated_data.version += 1
-        federated_data.is_active = poll.is_active
-        federated_data.save()
 
 
 @receiver(post_delete, sender=Poll)

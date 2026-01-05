@@ -7,7 +7,6 @@ These views provide endpoints for managing DIDs, verifiable credentials, and fed
 
 import json
 
-from django.core.exceptions import ObjectDoesNotExist
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -17,7 +16,6 @@ from apps.core.models import (
     DIDDocument,
     FederatedData,
     FederatedNode,
-    VerifiableCredential,
 )
 
 

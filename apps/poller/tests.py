@@ -369,3 +369,49 @@ class PollerAPIViewsTest(TestCase):
         self.assertEqual(response.json()["status"], "success")
         self.assertEqual(len(response.json()["data"]), 1)
         self.assertEqual(response.json()["data"][0]["option_id"], self.option1.id)
+
+    def test_vote_api_authenticated(self):
+        """Test that an authenticated user can cast a vote."""
+        self.client.force_login(self.user)
+        data = {"option_id": self.option1.id}
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            data=json.dumps(data),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        self.assertEqual(response.json()["data"]["option_id"], self.option1.id)
+
+    def test_vote_api_unauthenticated(self):
+        """Test that an unauthenticated user cannot cast a vote."""
+        data = {"option_id": self.option1.id}
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            data=json.dumps(data),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["status"], "error")
+        self.assertEqual(response.json()["message"], "You must be logged in to vote.")
+
+    def test_poll_list_view(self):
+        """Test that the poll list view renders correctly."""
+        response = self.client.get(reverse("poll_list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.poll.title)
+        self.assertTemplateUsed(response, "poller/poll_list.html")
+
+    def test_poll_detail_view(self):
+        """Test that the poll detail view renders correctly."""
+        response = self.client.get(reverse("poll_detail", args=[self.poll.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.poll.title)
+        self.assertContains(response, self.option1.text)
+        self.assertTemplateUsed(response, "poller/poll_detail.html")
+
+    def test_poll_detail_view_not_found(self):
+        """Test that the poll detail view returns 404 for non-existent poll."""
+        response = self.client.get(reverse("poll_detail", args=[999]))
+        self.assertEqual(response.status_code, 404)
+        self.assertTemplateUsed(response, "poller/poll_not_found.html")

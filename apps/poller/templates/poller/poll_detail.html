@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}{{ poll.title }} - Polly{% endblock %}
+
+{% block head %}
+    <meta name="description" content="{{ poll.description }}">
+{% endblock %}
+
+{% block content %}
+    <div class="bg-white shadow rounded-lg p-6" role="main" aria-labelledby="poll-title">
+        <h2 id="poll-title" class="text-2xl font-bold text-gray-900 mb-2">{{ poll.title }}</h2>
+        <p class="text-gray-600 mb-4">{{ poll.description }}</p>
+
+        <div class="flex items-center text-sm text-gray-500 mb-6">
+            <span></span>
+                Created by {{ poll.created_by.username }} •
+                {{ poll.created_at|timesince }} ago
+            </span>
+        </div>
+
+        {% if user_vote %}
+            <div class="bg-green-50 border-l-4 border-green-400 p-4 mb-6" role="alert" aria-label="Your vote confirmation">
+                <p class="text-green-700">
+                    You voted for <strong>{{ user_vote.option.text }}</strong>.
+                </p>
+            </div>
+        {% endif %}
+
+        <div
+            id="vote-form-{{ poll.id }}"
+            class="space-y-4"
+        >
+
+            <div class="space-y-3" role="radiogroup" aria-labelledby="vote-form-heading-{{ poll.id }}">
+                {% for option in poll.options.all %}
+                    <div class="flex items-center" role="radio" aria-checked="{% if user_vote and user_vote.option.id == option.id %}true{% else %}false{% endif %}">
+                        <input
+                            type="radio"
+                            name="option"
+                            id="option-{{ option.id }}"
+                            value="{{ option.id }}"
+                            class="h-4 w-4 text-[color:var(--primary-color)] border-gray-300 rounded focus:ring-[color:var(--primary-focus)]"
+                            {% if user_vote and user_vote.option.id == option.id %}checked{% endif %}
+                            {% if user_vote %}disabled{% endif %}
+                            aria-label="Vote for {{ option.text }}"
+                        >
+                        <label
+                            for="option-{{ option.id }}"
+                            class="ml-3 block text-gray-700 {% if user_vote and user_vote.option.id == option.id %}font-semibold{% endif %}"
+                        >
+                            {{ option.text }}
+                        </label>
+                        {% if not user_vote %}
+                            <button
+                                type="button"
+                                onclick="const radio = document.getElementById('option-{{ option.id }}');
+                                        if (!radio.checked) {
+                                            alert('Please select this option before voting.');
+                                            return;
+                                        }
+                                        console.log('Selected option ID:', '{{ option.id }}');
+                                        console.log('Submitting vote...');
+                                        htmx.ajax('POST', '{% url 'vote_api' poll.id %}', {
+                                            source: '#vote-form-{{ poll.id }}',
+                                            values: JSON.stringify({option_id: '{{ option.id }}'}),
+                                            headers: {
+                                                'X-CSRFToken': '{{ csrf_token }}',
+                                                'Content-Type': 'application/json'
+                                            },
+                                            target: '#vote-results-{{ poll.id }}',
+                                            swap: 'outerHTML'
+                                        });"
+                                class="ml-auto bg-[color:var(--primary-color)] text-white px-4 py-2 rounded-md hover:bg-[color:var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[color:var(--primary-focus)]"
+                                aria-label="Submit vote for {{ option.text }}"
+                            >
+                                Vote
+                            </button>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </form>
+
+        <div id="vote-results-{{ poll.id }}" class="mt-6" role="region" aria-labelledby="vote-results-heading-{{ poll.id }}">
+            <h3 id="vote-results-heading-{{ poll.id }}" class="sr-only">Vote results for {{ poll.title }}</h3>
+            {% include "poller/partials/vote_results.html" %}
+        </div>
+        <div id="vote-error-{{ poll.id }}" class="mt-4 text-red-600" role="alert" aria-live="assertive"></div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        // Handle form submission with HTMX
+        document.addEventListener('htmx:configRequest', function(evt) {
+            console.log("HTMX request headers:", evt.detail.headers);
+            console.log("HTMX request path:", evt.detail.path);
+        });
+
+        document.addEventListener('htmx:afterRequest', function(evt) {
+            console.log("HTMX response:", evt.detail);
+            if (evt.detail.successful && evt.detail.requestConfig.path === "{% url 'vote_api' poll.id %}") {
+                // Refresh the vote results after voting
+                htmx.trigger("#vote-results-{{ poll.id }}", "vote:updated");
+                document.getElementById("vote-error-{{ poll.id }}").textContent = "";
+            } else if (evt.detail.requestConfig.path === "{% url 'vote_api' poll.id %}") {
+                console.error("Voting failed:", evt.detail.xhr.response);
+                const errorMessage = evt.detail.xhr.response ?
+                    JSON.parse(evt.detail.xhr.response).message :
+                    "Failed to cast vote. Please try again.";
+                document.getElementById("vote-error-{{ poll.id }}").textContent = errorMessage;
+            }
+        });
+    </script>
+{% endblock %}
