@@ -6,14 +6,16 @@ in the Polly project. It includes views for DID-based and federated authenticati
 """
 
 import json
+import logging
 
 import didkit
-from django.contrib.auth import get_user_model, login
+from django.conf import settings
+from django.contrib.auth import authenticate, get_user_model, login
 from django.shortcuts import redirect, render
 from django.views import View
 
 from apps.accounts.forms import UserCreationForm
-from apps.accounts.utils.did_utils import generate_did, issue_vc
+from apps.accounts.utils.did_utils import generate_did, issue_vc, verify_vc
 
 User = get_user_model()
 
@@ -73,7 +75,7 @@ class RegisterView(View):
             user.did_key = json.dumps(key)
             user.save()
 
-            # Issue an authentication VC for the new user
+            # Issue an authentication VC for the user
             credential = {
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
                 "type": ["VerifiableCredential", "AuthenticationCredential"],
@@ -84,9 +86,15 @@ class RegisterView(View):
                     "name": user.username,
                 },
             }
+            # Issue the VC using the user's key
             vc = issue_vc(credential, user.did, user.did_key)
             if vc:
                 user.add_vc(json.loads(vc))
+            else:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error("VC issuance failed")
 
             # Set the backend for the user to avoid multiple backend errors
             user.backend = "django.contrib.auth.backends.ModelBackend"
@@ -115,5 +123,75 @@ class VCManagementView(View):
             {
                 "auth_vc": auth_vc,
                 "vcs": request.user.vcs,
+            },
+        )
+
+
+class GenerateDIDAndVCView(View):
+    """
+    View to generate a DID and VC for the current user.
+    """
+
+    def get(self, request):
+        """Generate a DID and VC for the current user."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.debug("GenerateDIDAndVCView called")
+        logger.debug(f"User authenticated: {request.user.is_authenticated}")
+        logger.debug(f"User: {request.user}")
+        logger.debug(f"Request headers: {request.headers}")
+        logger.debug(f"Request method: {request.method}")
+        if not request.user.is_authenticated:
+            logger.debug("User not authenticated, redirecting to login")
+            return redirect("login")
+
+        user = request.user
+
+        # Skip if the user already has a DID
+        if user.did:
+            logger.debug(f"User {user.username} already has a DID: {user.did}")
+            # Force VC generation for debugging
+            logger.debug("Forcing VC generation for debugging")
+
+        # Generate a DID for the user
+        user.did = generate_did(method="key")
+        user.did_method = "key"
+        logger.debug(f"Generated DID for user {user.username}: {user.did}")
+
+        # Generate a key pair for the user (in JWK format)
+        key = json.loads(didkit.generateEd25519Key())
+        user.did_key = json.dumps(key)
+        user.save()
+
+        # Issue an authentication VC for the user
+        import logging
+
+        logger = logging.getLogger(__name__)
+        credential = {
+            "@context": "https://www.w3.org/2018/credentials/v1",
+            "type": ["VerifiableCredential", "AuthenticationCredential"],
+            "issuer": user.did,
+            "issuanceDate": "2023-01-01T00:00:00Z",
+            "credentialSubject": {
+                "id": user.did,
+                "name": user.username,
+            },
+        }
+        # Issue the VC using the user's key
+        vc = issue_vc(credential, user.did, user.did_key)
+        if vc:
+            logger.debug(f"VC issued successfully: {vc}")
+            user.add_vc(json.loads(vc))
+        else:
+            logger.error("VC issuance failed")
+
+        logger.debug("Rendering vc_container.html")
+        return render(
+            request,
+            "accounts/partials/vc_container.html",
+            {
+                "auth_vc": user.get_authentication_vc(),
+                "vcs": user.vcs,
             },
         )

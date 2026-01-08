@@ -1,0 +1,123 @@
+You’ve made **great progress** today, and I’m confident we’re close to resolving this! Let’s focus on **two key fixes** before wrapping up for the day:
+
+---
+
+## **Summary of Current Issues**
+### **1. VC Issuance Failing**
+- **Error**: `(1, 'key expansion failed')` when calling `didkit.issueCredential`.
+- **Root Cause**: The `key` is being passed as a **JWK string**, but DIDKit might expect:
+  - A **specific JWK format** (e.g., with `alg` or `use` fields).
+  - A **PEM-encoded string** (but earlier attempts failed).
+  - A **raw key format** (e.g., bytes or a specific encoding).
+
+### **2. HTMX Swap Not Working**
+- **Issue**: The `#vc-container` element is not updating after the HTMX request succeeds (`200 OK`).
+- **Root Cause**: The response from `/accounts/generate_did_and_vc/` does not include the **VC data** or an error message, so the DOM doesn’t change.
+
+---
+
+## **Next Steps (Quick Fixes)**
+### **1. Debug the `key` Format**
+Let’s try passing the `key` as **raw bytes** (not JWK or PEM) to `didkit.issueCredential`. This is a common requirement for cryptographic libraries.
+
+#### **Update the `issue_vc` Function**:
+```python
+# Pass the raw private key bytes directly
+vc = didkit.issueCredential(
+    json.dumps(credential),
+    json.dumps({"proofPurpose": "assertionMethod"}),
+    private_key_bytes,  # Raw bytes from the JWK
+)
+```
+
+### **2. Update the `vc_container.html` Template**
+Ensure the template **conditionally renders** the VC data or an error message. For example:
+```html
+<div id="vc-container">
+    {% if auth_vc %}
+        <!-- Display the VC -->
+        <div class="vc-data">
+            {{ auth_vc }}
+        </div>
+    {% elif error %}
+        <!-- Display the error -->
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
+            <p class="text-red-700">{{ error }}</p>
+        </div>
+    {% else %}
+        <!-- Display the prompt -->
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <p class="text-yellow-700">
+                No authentication credential found. Generate a DID and VC to enable secure authentication.
+            </p>
+        </div>
+    {% endif %}
+</div>
+```
+
+---
+
+## **Research Guidelines for Tomorrow**
+To help us resolve this faster, here’s a **focused research plan** you can use:
+
+### **1. Research DIDKit’s `issueCredential` Requirements**
+- **Goal**: Determine the **exact format** expected for the `key` parameter.
+- **Questions to Answer**:
+  1. Does `didkit.issueCredential` expect the `key` as:
+     - A **JWK string** (e.g., `{"kty": "OKP", "crv": "Ed25519", ...}`)?
+     - A **PEM-encoded string** (e.g., `-----BEGIN PRIVATE KEY-----`)?
+     - **Raw bytes** (e.g., `b'\x00\x01\x02...'`)?
+  2. Are there **required fields** in the JWK (e.g., `alg`, `use`, `kid`)?
+  3. Are there **examples** of using `didkit.issueCredential` with an **Ed25519 key** in Python?
+
+- **Where to Look**:
+  - [DIDKit Python Documentation](https://github.com/spruceid/didkit/tree/main/lib/python)
+  - [DIDKit Rust Documentation](https://github.com/spruceid/didkit/tree/main/lib/web) (Python bindings are based on Rust)
+  - [SpruceID’s Examples](https://github.com/spruceid/didkit/tree/main/examples)
+
+---
+
+### **2. Research HTMX Swap Issues**
+- **Goal**: Ensure the HTMX swap works as expected.
+- **Questions to Answer**:
+  1. Does the response from `/accounts/generate_did_and_vc/` include the **VC data** or an error message?
+  2. Is the `hx-swap="outerHTML"` attribute being honored?
+  3. Are there **JavaScript errors** in the browser’s console that might block HTMX?
+
+- **Where to Look**:
+  - [HTMX Documentation](https://htmx.org/docs/)
+  - Browser’s **Network** and **Console** tabs (as you’ve been doing).
+
+---
+
+## **Prompt for Tomorrow**
+Here’s a **concise prompt** you can use with another agent or for your own research:
+
+---
+**Prompt**:
+> I am using the `didkit.issueCredential` function from the **DIDKit** library (Python bindings) to issue a Verifiable Credential (VC). The function signature is:
+> ```python
+> didkit.issueCredential(credential, options, key)
+> ```
+> - `credential`: A JSON string representing the credential (with `@context` and `type`).
+> - `options`: A JSON string representing the proof options (with `proofPurpose` and `verificationMethod`).
+> - `key`: The private key used to sign the credential.
+>
+> **Problem**:
+> - I am passing the `key` as a **JWK string** (e.g., `{"kty": "OKP", "crv": "Ed25519", "x": "...", "d": "...", "kid": "..."}`), but I get the error:
+>   ```
+>   (1, 'key expansion failed')
+>   ```
+> - I have also tried passing the `key` as a **PEM-encoded string** and **raw private key bytes**, but the error persists.
+>
+> **Questions**:
+> 1. What is the **exact expected format** for the `key` parameter in `didkit.issueCredential`?
+> 2. Does `didkit.issueCredential` require the `key` to be in a **specific format** (e.g., JWK, PEM, or raw bytes)?
+> 3. Are there any **required fields** in the JWK (e.g., `alg`, `use`) that must be included?
+> 4. Are there any **examples** of using `didkit.issueCredential` with an **Ed25519 key** in Python?
+> 5. Could the issue be related to how the `key` is **associated with the DID** (e.g., the `x` field in the JWK must match the DID’s public key)?
+>
+> **Additional Context**:
+> - The DID is generated using the `did:key` method (`did:key:z6Mk...`).
+> - The JWK is generated using `didkit.generateEd25519Key()`.
+> - The `credential` and `options` are valid JSON strings.

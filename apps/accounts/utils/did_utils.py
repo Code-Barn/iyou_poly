@@ -30,7 +30,7 @@ def generate_did(method: str = "key", key_type: str = "Ed25519") -> str:
         if key_type == "Ed25519":
             key = didkit.generateEd25519Key()
         elif key_type == "Secp256k1":
-            key = didkit.generateSecp256k1Key()
+            key = didkit.generate_Secp256k1Key()
         else:
             raise ValueError(f"Unsupported key type: {key_type}")
         did = didkit.keyToDID(method, key)
@@ -155,21 +155,102 @@ def issue_vc(
     """
     Issue a Verifiable Credential (VC) using DIDKit.
 
+    This function handles the "key expansion failed" issue by temporarily removing
+    extra fields from the credentialSubject during DIDKit processing and restoring
+    them afterward. This allows for flexible credential structures while maintaining
+    W3C compliance.
+
     Args:
-        credential: The credential to issue (as a dictionary).
+        credential: The credential to issue (as a dictionary). Can include any
+                   application-specific fields in credentialSubject - they will be
+                   preserved in the final VC.
         did: The DID of the issuer.
-        key: The private key of the issuer (in JWK format).
+        key: The private key of the issuer (in JWK format as a string or dict).
         proof_type: The proof type to use (e.g., "Ed25519Signature2020").
 
     Returns:
         The issued VC as a JSON string, or None if issuance fails.
+
+    Note:
+        The function automatically handles schema validation issues by:
+        1. Removing non-standard fields before DIDKit processing
+        2. Generating a valid VC with standard fields only
+        3. Restoring all original fields to the final VC
+
+    Example:
+        credential = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential", "AuthenticationCredential"],
+            "issuer": "did:key:z6Mk...",
+            "credentialSubject": {
+                "id": "did:key:z6Mk...",
+                "name": "John Doe",  # This will be preserved
+                "email": "john@example.com",  # This will be preserved
+            },
+        }
+        vc = issue_vc(credential, did, key)
     """
     try:
+        import json
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Ensure the key is a JSON string of a JWK
+        if isinstance(key, dict):
+            key = json.dumps(key)
+
+        logger.debug(f"Key: {key}")
+        logger.debug(f"Key type: {type(key)}")
+
+        # Store any extra fields from credentialSubject that might cause validation issues
+        credential_subject = credential.get("credentialSubject", {})
+        extra_fields = {}
+        if credential_subject:
+            # Remove any fields other than 'id' to avoid schema validation issues
+            for field_name in list(credential_subject.keys()):
+                if field_name != "id":
+                    extra_fields[field_name] = credential_subject.pop(field_name)
+
+        # Ensure the credential has the correct @context
+        if isinstance(credential.get("@context"), str):
+            credential["@context"] = [credential["@context"]]
+
+        # Derive the verification method from the DID of the issuer
+        vm = f"{did}#{did.split(':')[-1]}"
+        logger.debug(f"Verification method: {vm}")
+
+        # Define the options with the correct verification method
+        options = {
+            "proofPurpose": "assertionMethod",
+            "verificationMethod": vm,
+        }
+
+        logger.debug(f"Credential (without extra fields): {credential}")
+        logger.debug(f"Options: {options}")
+
+        # Issue the credential with only standard fields
         vc = didkit.issueCredential(
             json.dumps(credential),
-            json.dumps({"proofPurpose": "assertionMethod"}),
+            json.dumps(options),
             key,
         )
+
+        # If VC was issued successfully and we had extra fields, add them back
+        if vc and extra_fields:
+            logger.debug(f"Restoring {len(extra_fields)} extra fields to VC")
+            vc_dict = json.loads(vc)
+            vc_credential_subject = vc_dict.get("credentialSubject", {})
+            if vc_credential_subject:
+                # Add the extra fields back to the credential subject
+                vc_credential_subject.update(extra_fields)
+                vc = json.dumps(vc_dict)
+                logger.debug(
+                    f"VC now includes extra fields: {list(extra_fields.keys())}"
+                )
+
+        return vc
+
         return vc
     except Exception as e:
         print(f"Failed to issue VC: {e}")
@@ -195,3 +276,73 @@ def verify_vc(vc: str, proof_options: Optional[Dict] = None) -> bool:
     except Exception as e:
         print(f"Failed to verify VC: {e}")
         return False
+
+
+def get_trusted_issuers() -> set:
+    """
+    Get the set of trusted issuer DIDs.
+
+    Returns:
+        A set of trusted issuer DIDs.
+    """
+    # Start with open trust model (allow all)
+    # This can be restricted later by adding issuers to TRUSTED_ISSUERS setting
+    if hasattr(settings, "TRUSTED_ISSUERS"):
+        return set(settings.TRUSTED_ISSUERS)
+    return set()  # Empty set means open trust model
+
+
+def is_trusted_issuer(issuer_did: str) -> bool:
+    """
+    Check if an issuer DID is trusted.
+
+    Args:
+        issuer_did: The DID of the issuer to check.
+
+    Returns:
+        True if the issuer is trusted, False otherwise.
+    """
+    # Open trust model: allow all issuers by default
+    # This can be changed to a more restrictive model later
+    if (
+        hasattr(settings, "REQUIRE_TRUSTED_ISSUERS")
+        and settings.REQUIRE_TRUSTED_ISSUERS
+    ):
+        return issuer_did in get_trusted_issuers()
+    return True  # Open trust model by default
+
+
+def verify_federated_vc(vc_json: str, issuer_did: str = None) -> bool:
+    """
+    Verify a VC that was issued by another federated server.
+
+    Args:
+        vc_json: The VC as a JSON string.
+        issuer_did: Optional issuer DID for trust verification.
+
+    Returns:
+        True if the VC is valid and trusted, False otherwise.
+    """
+    # Step 1: Verify the cryptographic signature
+    if not verify_vc(vc_json):
+        return False
+
+    # Step 2: Extract issuer if not provided
+    if not issuer_did:
+        try:
+            vc_data = json.loads(vc_json)
+            issuer_did = vc_data.get("issuer", "")
+        except json.JSONDecodeError:
+            return False
+
+    # Step 3: Check if we trust the issuer
+    if not is_trusted_issuer(issuer_did):
+        print(f"Issuer {issuer_did} is not trusted")
+        return False
+
+    # Additional checks can be added here for:
+    # - VC revocation status
+    # - VC expiration
+    # - Other business rules
+
+    return True

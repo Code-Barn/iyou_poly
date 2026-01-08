@@ -1,0 +1,134 @@
+Watching for file changes with StatReloader
+Not Found: /accounts/vc-management/
+"GET /accounts/vc-management/ HTTP/1.1" 404 20988
+"GET / HTTP/1.1" 200 25388
+"GET /login/ HTTP/1.1" 200 22592
+"POST /login/ HTTP/1.1" 200 22594
+"GET /register/ HTTP/1.1" 200 22658
+Key before passing to issue_vc: {'kty': 'OKP', 'crv': 'Ed25519', 'x': 'EiRgQhHBh-tndoph4DrPepzxw4l8wzp8KBS2ClAKcEQ', 'd': 'ng10xWfw3Ld8uS-osRBZ3kN6yQCB7osr3c9zTRQbYW0'}
+Key type before passing to issue_vc: <class 'dict'>
+VC issuance failed
+"POST /register/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 26197
+"GET /login/ HTTP/1.1" 200 22987
+"POST /logout/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 25388
+Not Found: /accounts/vc-management/
+"GET /accounts/vc-management/ HTTP/1.1" 404 20988
+"GET / HTTP/1.1" 200 25388
+"GET /register/ HTTP/1.1" 200 22658
+"POST /register/ HTTP/1.1" 200 22817
+Key before passing to issue_vc: {'kty': 'OKP', 'crv': 'Ed25519', 'x': 'Td6_705L2QyKkybxdMXawtr4fZ03G9XJkBtZTO25tII', 'd': 'cbLwtGqaGY63RXoJWH8haKerPL5SGNwpwY7ZZ8v9LVs'}
+Key type before passing to issue_vc: <class 'dict'>
+VC issuance failed
+"POST /register/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 26194
+"GET /login/ HTTP/1.1" 200 22986
+"POST /logout/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 25388
+"GET /accounts/vcs/ HTTP/1.1" 302 0
+"GET /login/ HTTP/1.1" 200 22592
+"GET /login/ HTTP/1.1" 200 22594
+"POST /login/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 26194
+"GET /accounts/vcs/ HTTP/1.1" 200 22192
+"GET /__debug__/render_panel/?request_id=15ca654033434e40ae51527b7709665a&panel_id=SQLPanel HTTP/1.1" 200 13559
+GenerateDIDAndVCView called
+User authenticated: True
+User: admin
+Request headers: {'Content-Length': '', 'Content-Type': 'text/plain', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Linux"', 'X-Csrftoken': 'H9hCOAb9hzkcU0LTRjqMeYV90NQ3ftH4NDKn6ANDefzWc3zz1uKr2Vi79d2baLNS', 'Hx-Target': 'vc-container', 'Hx-Current-Url': 'http://localhost:8000/accounts/vcs/', 'Sec-Ch-Ua': '"Chromium";v="143", "Not A(Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Hx-Request': 'true', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', 'Accept': '*/*', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:8000/accounts/vcs/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9', 'Cookie': 'csrftoken=gEDVsaME7QpUsdYQkluPY7x8jAmi5sgY; sessionid=3n7hg8t5ez10whclliy5yy8xx72qerk0'}
+Request method: GET
+User admin already has a DID: did:key:z6MkfZjBfygS8GHsB9H2bMZenWo5hTFLRvAqw8A7dzZGWpvv
+"GET /accounts/generate_did_and_vc/ HTTP/1.1" 200 553
+"GET /__debug__/history_sidebar/?request_id=d72481948c094b38bfa53377eb18592f HTTP/1.1" 200 10603
+/home/user/CODE_BASE/polly/apps/accounts/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+January 05, 2026 - 22:40:46
+Django version 6.0, using settings 'config.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Failed to issue VC: (1, 'key expansion failed')
+Failed to issue VC: (1, 'key expansion failed')
+Watching for file changes with StatReloader
+GenerateDIDAndVCView called
+User authenticated: True
+User: admin
+Request headers: {'Content-Length': '', 'Content-Type': 'text/plain', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Linux"', 'X-Csrftoken': 'H9hCOAb9hzkcU0LTRjqMeYV90NQ3ftH4NDKn6ANDefzWc3zz1uKr2Vi79d2baLNS', 'Hx-Target': 'vc-container', 'Hx-Current-Url': 'http://localhost:8000/accounts/vcs/', 'Sec-Ch-Ua': '"Chromium";v="143", "Not A(Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Hx-Request': 'true', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', 'Accept': '*/*', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:8000/accounts/vcs/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9', 'Cookie': 'csrftoken=gEDVsaME7QpUsdYQkluPY7x8jAmi5sgY; sessionid=3n7hg8t5ez10whclliy5yy8xx72qerk0'}
+Request method: GET
+User admin already has a DID: did:key:z6MkfZjBfygS8GHsB9H2bMZenWo5hTFLRvAqw8A7dzZGWpvv
+Forcing VC generation for debugging
+Generated DID for user admin: did:key:z6MkjYcWxktCnrha6ztkNMQL1WsbuvRPjkn1SXNawZpTTExD
+Hardcoded key: {"kty": "OKP", "crv": "Ed25519", "d": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}
+User key: {"kty": "OKP", "crv": "Ed25519", "x": "JTtCHm4QUHkEdq491oPIf7PbPvcHsWitqLhdiacgB8M", "d": "Jxz_-Ela3mVYACgIVmBqSvL99_y5YffRHe4yBTaSLew"}
+Hardcoded key failed, skipping user key test
+VC issuance failed
+Rendering vc_container.html
+"GET /accounts/generate_did_and_vc/ HTTP/1.1" 200 553
+"GET /__debug__/history_sidebar/?request_id=80684bc289fb420a87c546cfcc427850 HTTP/1.1" 200 10603
+/home/user/CODE_BASE/polly/apps/accounts/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+January 05, 2026 - 22:44:02
+Django version 6.0, using settings 'config.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Failed to issue VC: (1, 'key expansion failed')
+Watching for file changes with StatReloader
+"GET /accounts/vcs/ HTTP/1.1" 302 0
+"GET /login/ HTTP/1.1" 200 22592
+"GET /static/debug_toolbar/js/toolbar.js HTTP/1.1" 200 14879
+"GET /static/debug_toolbar/css/toolbar.css HTTP/1.1" 200 30101
+"GET /static/debug_toolbar/css/print.css HTTP/1.1" 200 43
+"GET /static/debug_toolbar/js/utils.js HTTP/1.1" 200 4700
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 20938
+"POST /login/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 26196
+"GET /login/ HTTP/1.1" 200 22986
+"POST /logout/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 25388
+"GET /accounts/vcs/ HTTP/1.1" 302 0
+"GET /login/ HTTP/1.1" 200 22592
+"POST /login/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 26196
+"GET /accounts/vcs/ HTTP/1.1" 200 22194
+GenerateDIDAndVCView called
+User authenticated: True
+User: admin
+Request headers: {'Content-Length': '', 'Content-Type': 'text/plain', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Linux"', 'X-Csrftoken': 'mwygKv13JsebNe3g7FPMYrrQ5d3AFABytbt5pju55ErV4Ny1obEJpiHdcA6lBIqg', 'Hx-Target': 'vc-container', 'Hx-Current-Url': 'http://localhost:8000/accounts/vcs/', 'Sec-Ch-Ua': '"Chromium";v="143", "Not A(Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Hx-Request': 'true', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', 'Accept': '*/*', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:8000/accounts/vcs/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9', 'Cookie': 'csrftoken=hP5ZPYDcwmnUrJFVrGZ7B1qxhxdV6iZS; sessionid=pdj3fplqigmhnotoebadq03jkejdbb8f'}
+Request method: GET
+User admin already has a DID: did:key:z6MkjYcWxktCnrha6ztkNMQL1WsbuvRPjkn1SXNawZpTTExD
+Forcing VC generation for debugging
+Generated DID for user admin: did:key:z6MkgTqztgF7dZuybhrvy3FDREc24PhUv3WBUTrm37UFk71Q
+Minimal key: {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo", "d": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"}
+User key: {"kty": "OKP", "crv": "Ed25519", "x": "Hfz5tMkdCeZhGECFcGW8jdgeoW-GRi7Kfw6e3gyrRFo", "d": "CaxLZ86wJViN9hL2jyOnyu8LhEjbif6itqyMhxrMJtc"}
+Hardcoded key failed, skipping user key test
+VC issuance failed
+Rendering vc_container.html
+"GET /accounts/generate_did_and_vc/ HTTP/1.1" 200 553
+"GET /__debug__/history_sidebar/?request_id=23e704668d654280a5d6b022d271ea94 HTTP/1.1" 200 10606
+"GET /accounts/vcs/ HTTP/1.1" 200 22194
+GenerateDIDAndVCView called
+User authenticated: True
+User: admin
+Request headers: {'Content-Length': '', 'Content-Type': 'text/plain', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Linux"', 'X-Csrftoken': '7UtAJx9yAAnX1YQNKT6QOaGVVZq3oTDNezopolCAWMAHixly1pVNf1Wi2mtOk1sv', 'Hx-Target': 'vc-container', 'Hx-Current-Url': 'http://localhost:8000/accounts/vcs/', 'Sec-Ch-Ua': '"Chromium";v="143", "Not A(Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Hx-Request': 'true', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', 'Accept': '*/*', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:8000/accounts/vcs/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9', 'Cookie': 'csrftoken=hP5ZPYDcwmnUrJFVrGZ7B1qxhxdV6iZS; sessionid=pdj3fplqigmhnotoebadq03jkejdbb8f'}
+Request method: GET
+User admin already has a DID: did:key:z6MkgTqztgF7dZuybhrvy3FDREc24PhUv3WBUTrm37UFk71Q
+Forcing VC generation for debugging
+Generated DID for user admin: did:key:z6MkiVWmRwrtXHJRrL4gDqTBg11uXkas7FHKzEFN84Z25ZAL
+Minimal key: {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo", "d": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"}
+User key: {"kty": "OKP", "crv": "Ed25519", "x": "2cFl3WfDGFOyMOGaNjtIMYdMKDe5sYqQdfdPMHXKxk0", "d": "Z0GU-vhNBrZf9ah9aLVw1cmk_GKznHX6sf2k0alTJ40"}
+Hardcoded key failed, skipping user key test
+VC issuance failed
+Rendering vc_container.html
+"GET /accounts/generate_did_and_vc/ HTTP/1.1" 200 553
+"GET /__debug__/history_sidebar/?request_id=63e1797c22e74161ba8b138a2c119687 HTTP/1.1" 200 10603

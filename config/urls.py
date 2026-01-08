@@ -19,7 +19,12 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
-from apps.accounts.views import DIDLoginView, RegisterView, VCManagementView
+from apps.accounts.views import (
+    DIDLoginView,
+    GenerateDIDAndVCView,
+    RegisterView,
+    VCManagementView,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -42,5 +47,10 @@ urlpatterns = [
         "accounts/vcs/",
         VCManagementView.as_view(),
         name="vc_management",
+    ),
+    path(
+        "accounts/generate_did_and_vc/",
+        GenerateDIDAndVCView.as_view(),
+        name="generate_did_and_vc",
     ),
 ]

@@ -8,6 +8,9 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- CSRF Token for HTMX requests -->
+    <meta name="csrf-token" content="{{ csrf_token }}">
+
     <!-- CSS Variables for theming -->
     <style>
         :root {
@@ -41,11 +44,11 @@
     </style>
     {% block head %}{% endblock %}
     <!-- CSRF Token for HTMX requests -->
-    <!-- CSRF Token for HTMX requests -->
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             htmx.on('htmx:configRequest', function(evt) {
-                evt.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
+                evt.detail.headers['X-CSRFToken'] = document.querySelector('meta[name=csrf-token]').getAttribute('content');
             });
         });
     </script>

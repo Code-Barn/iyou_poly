@@ -1,0 +1,57 @@
+GenerateDIDAndVCView called
+User authenticated: True
+User: admin
+Request headers: {'Content-Length': '', 'Content-Type': 'text/plain', 'Host': 'localhost:8000', 'Connection': 'keep-alive', 'Sec-Ch-Ua-Platform': '"Linux"', 'X-Csrftoken': 'g6a1swbGLz7x8w86MfgHWvErknmxWmVdadxZI69MUMiLnWhMckij1P2EADpByoz5', 'Hx-Target': 'vc-container', 'Hx-Current-Url': 'http://localhost:8000/accounts/vcs/', 'Sec-Ch-Ua': '"Chromium";v="143", "Not A(Brand";v="24"', 'Sec-Ch-Ua-Mobile': '?0', 'Hx-Request': 'true', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', 'Accept': '*/*', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Referer': 'http://localhost:8000/accounts/vcs/', 'Accept-Encoding': 'gzip, deflate, br, zstd', 'Accept-Language': 'en-US,en;q=0.9', 'Cookie': 'csrftoken=4hx8qK8gjnlopAjQAfcMfuynqqdeMcO2; sessionid=hwvkqfox4v3mdbykm2p9gk8xa5pa0971'}
+Request method: GET
+User admin already has a DID: did:key:z6MkpSdxcySm3J73EUP2WcUWgCn66PUc6R9FEgumBzcRszPU
+Forcing VC generation for debugging
+Generated DID for user admin: did:key:z6MkoyqpvCWAewt85eTDADiMw6U7qVZTbdWMbJYQjqSf2LhW
+Minimal key: {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo", "d": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"}
+User key: {"kty": "OKP", "crv": "Ed25519", "x": "rFi2uLVExRGt1oZby2uRRokovLLMsrtJ0hqxgOX056o", "d": "qxIXMlOk5C9sAcyFx4WyVE9mw0cx7ndbTHD3P5wbzmQ"}
+PEM-encoded key: -----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g
+-----END PRIVATE KEY-----
+
+DID: did:key:z6MkoyqpvCWAewt85eTDADiMw6U7qVZTbdWMbJYQjqSf2LhW
+JWK key: {'kty': 'OKP', 'crv': 'Ed25519', 'x': '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo', 'd': 'nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A', 'kid': 'did:key:z6MkoyqpvCWAewt85eTDADiMw6U7qVZTbdWMbJYQjqSf2LhW#z6MkoyqpvCWAewt85eTDADiMw6U7qVZTbdWMbJYQjqSf2LhW'}
+Failed to issue VC: 'bytes' object has no attribute 'encode'
+Hardcoded key failed, skipping user key test
+VC issuance failed
+Rendering vc_container.html
+"GET /accounts/generate_did_and_vc/ HTTP/1.1" 200 553
+"GET /__debug__/history_sidebar/?request_id=1fe32da7a51c4e2b924c6aeb0420bd62 HTTP/1.1" 200 10603
+
+network (response):
+HTTP/1.1 200 OK
+Date: Mon, 05 Jan 2026 23:44:48 GMT
+Server: WSGIServer/0.2 CPython/3.13.5
+Content-Type: text/html; charset=utf-8
+X-Frame-Options: DENY
+Content-Length: 553
+Vary: Cookie
+X-Content-Type-Options: nosniff
+Referrer-Policy: same-origin
+Cross-Origin-Opener-Policy: same-origin
+djdt-request-id: 1fe32da7a51c4e2b924c6aeb0420bd62
+Server-Timing: TimerPanel_utime;dur=43.63;desc="User CPU time", TimerPanel_stime;dur=8.900000000000006;desc="System CPU time", TimerPanel_total;dur=52.53000000000001;desc="Total CPU time", TimerPanel_total_time;dur=57.635069999378175;desc="Elapsed time", SQLPanel_sql_time;dur=6.838073022663593;desc="SQL 3 queries", CachePanel_total_time;dur=0;desc="Cache 0 Calls"
+
+network (request):
+GET /accounts/generate_did_and_vc/ HTTP/1.1
+Accept: */*
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Connection: keep-alive
+Cookie: csrftoken=4hx8qK8gjnlopAjQAfcMfuynqqdeMcO2; sessionid=hwvkqfox4v3mdbykm2p9gk8xa5pa0971
+HX-Current-URL: http://localhost:8000/accounts/vcs/
+HX-Request: true
+HX-Target: vc-container
+Host: localhost:8000
+Referer: http://localhost:8000/accounts/vcs/
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-origin
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36
+X-CSRFToken: g6a1swbGLz7x8w86MfgHWvErknmxWmVdadxZI69MUMiLnWhMckij1P2EADpByoz5
+sec-ch-ua: "Chromium";v="143", "Not A(Brand";v="24"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
