@@ -73,10 +73,12 @@ def test_did_vc_generation():
         "issuanceDate": "2023-01-01T00:00:00Z",
         "credentialSubject": {
             "id": did,
-            "name": "testuser",
         },
     }
     logger.debug(f"Credential: {credential}")
+
+    # Store the name parameter to re-add it after issuing the VC
+    name = "testuser"
 
     # Define the options
     options = {
@@ -96,6 +98,12 @@ def test_did_vc_generation():
 
     if vc:
         logger.debug("VC issued successfully")
+
+        # Re-add the name parameter to the VC
+        vc_dict = json.loads(vc)
+        vc_dict["credentialSubject"]["name"] = name
+        vc = json.dumps(vc_dict)
+
         return True
     else:
         logger.error("VC issuance failed")

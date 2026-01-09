@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document explains the VC (Verifiable Credential) generation process in the Polly project, including a recent fix for the "key expansion failed" error and best practices for working with the `issue_vc` function.
+This document explains the VC (Verifiable Credential) generation process in the Polly project, including fixes for common issues and best practices for working with VCs and the DID login system.
 
 ## Background
 
@@ -232,6 +232,82 @@ This allows users to register simply by logging in with their VC from another fe
 - **Preserves application data**: All business-specific information is retained
 - **Avoids complex context management**: No need to define JSON-LD contexts for every possible field
 - **Backward compatible**: Existing code continues to work without changes
+
+## Flexible VC Parsing for DID Login
+
+### Problem Description
+
+Users were experiencing "Invalid JSON format for Verifiable Credential" errors when attempting to log in using VCs copied from the UI. This occurred because:
+
+1. VCs were stored as Python dictionaries in the database
+2. The UI displayed VCs using `{{ vc|escape }}` which showed Python dict syntax (single quotes)
+3. When users copied and pasted VCs, they were in Python dict format
+4. The DID login view expected proper JSON format (double quotes)
+
+### Solution
+
+Implemented flexible VC parsing in `apps/accounts/did_views.py` that can handle multiple input formats:
+
+1. **Proper JSON format** (double quotes) - Standard JSON
+2. **Python dict format** (single quotes) - What gets copied from UI
+3. **HTML-escaped content** (`&#x27;`) - Browser-escaped quotes
+
+### Implementation Details
+
+The `parse_vc_input()` function in `did_views.py`:
+
+```python
+def parse_vc_input(vc_input: str) -> dict:
+    """
+    Parse VC input that could be either JSON or Python dict format.
+
+    Args:
+        vc_input: The VC input string (could be JSON or Python dict format)
+
+    Returns:
+        The parsed VC as a dictionary
+
+    Raises:
+        ValueError: If the input cannot be parsed as either format
+    """
+    # First try to parse as JSON
+    try:
+        return json.loads(vc_input)
+    except json.JSONDecodeError:
+        pass
+
+    # If JSON parsing fails, try to convert Python dict format to JSON format
+    try:
+        # Handle HTML-escaped content (from UI copy/paste)
+        json_format = vc_input.replace("&#x27;", "'")
+        # Convert single quotes to double quotes for JSON compatibility
+        json_format = re.sub(r"'", '"', json_format)
+        # Handle Python-specific syntax like True/False/None
+        json_format = re.sub(r"\bTrue\b", "true", json_format)
+        json_format = re.sub(r"\bFalse\b", "false", json_format)
+        json_format = re.sub(r"\bNone\b", "null", json_format)
+        return json.loads(json_format)
+    except Exception:
+        raise ValueError(
+            "Invalid VC format. Please provide valid JSON or Python dict format."
+        )
+```
+
+### User Workflow
+
+Users can now successfully:
+
+1. Generate a DID and VC using the "Generate DID & VC" function
+2. Copy the VC from the UI (in whatever format it's displayed)
+3. Paste it into the DID login form
+4. Successfully log in
+
+### Benefits
+
+- **Improved UX**: Users don't need to manually convert VC formats
+- **Backward compatibility**: Existing JSON-based workflows continue to work
+- **Robust error handling**: Clear error messages for invalid formats
+- **No breaking changes**: VC generation and storage remain unchanged
 
 ## Future Considerations
 

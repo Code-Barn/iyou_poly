@@ -33,19 +33,36 @@ class DIDLoginView(View):
 
     def post(self, request):
         """Process the DID login form submission."""
-        did = request.POST.get("did")
-        vc = request.POST.get("vc")
-        vc_proof = request.POST.get("vc_proof")
+        vc_json = request.POST.get("vc")
 
-        user = authenticate(request, did=did, vc=vc, vc_proof=vc_proof)
-        if user is not None:
-            login(request, user)
-            return redirect("poll_list")
-        else:
+        try:
+            vc_data = json.loads(vc_json)
+            user_did = vc_data["credentialSubject"]["id"]
+            vc_proof = vc_data.get("proof", {})
+
+            user = authenticate(
+                request, did=user_did, vc=vc_json, vc_proof=json.dumps(vc_proof)
+            )
+            if user is not None:
+                login(request, user)
+                return redirect("poll_list")
+            else:
+                return render(
+                    request,
+                    "registration/did_login.html",
+                    {"error": "Invalid DID or Verifiable Credential."},
+                )
+        except json.JSONDecodeError:
             return render(
                 request,
                 "registration/did_login.html",
-                {"error": "Invalid DID or Verifiable Credential."},
+                {"error": "Invalid JSON format for Verifiable Credential."},
+            )
+        except KeyError:
+            return render(
+                request,
+                "registration/did_login.html",
+                {"error": "Missing required fields in Verifiable Credential."},
             )
 
 

@@ -36,26 +36,22 @@ class DIDLoginTrustManagementTest(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        self.test_did = "did:key:z6MkTest123456789ABCDEF"
-        self.test_key = json.dumps(
-            {
-                "kty": "OKP",
-                "crv": "Ed25519",
-                "x": "test_public_key",
-                "d": "test_private_key",
-            }
-        )
+        import didkit
+
+        # Generate a proper key and DID for testing
+        self.test_key = didkit.generateEd25519Key()
+        self.test_did = didkit.keyToDID("key", self.test_key)
 
         # Create test user
         self.user = User.objects.create_user(
-            username="testuser",
+            username="testuser_trust",
             did=self.test_did,
             did_method="key",
             did_key=self.test_key,
         )
 
-        # Create valid VC for testing
-        self.valid_vc = {
+        # Create valid VC for testing using issue_vc
+        credential = {
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             "type": ["VerifiableCredential", "AuthenticationCredential"],
             "issuer": self.test_did,
@@ -65,6 +61,8 @@ class DIDLoginTrustManagementTest(TestCase):
                 "name": "testuser",
             },
         }
+        vc_json = issue_vc(credential, self.test_did, self.test_key)
+        self.valid_vc = json.loads(vc_json)
 
     def test_trust_management_open_model(self):
         """Test open trust model (allow all issuers)."""
@@ -153,7 +151,7 @@ class DIDLoginViewTest(TestCase):
         """Test GET request to DID login page."""
         response = self.client.get(reverse("did_login"))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "accounts/did_login.html")
+        self.assertTemplateUsed(response, "registration/did_login.html")
 
     @patch("apps.accounts.utils.did_utils.verify_federated_vc")
     def test_did_login_post_valid(self, mock_verify):
@@ -180,7 +178,7 @@ class DIDLoginViewTest(TestCase):
 
         # Should return form with error
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Invalid or untrusted Verifiable Credential")
+        self.assertContains(response, "Invalid JSON format for Verifiable Credential")
 
     @patch("apps.accounts.utils.did_utils.verify_federated_vc")
     def test_did_login_auto_provisioning(self, mock_verify):
@@ -193,6 +191,7 @@ class DIDLoginViewTest(TestCase):
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             "type": ["VerifiableCredential", "AuthenticationCredential"],
             "issuer": new_did,
+            "issuanceDate": "2023-01-01T00:00:00Z",
             "credentialSubject": {
                 "id": new_did,
                 "name": "newuser",

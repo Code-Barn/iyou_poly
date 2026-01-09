@@ -7,6 +7,7 @@ in the federated authentication system.
 
 import json
 import logging
+import re
 
 import didkit
 from django.conf import settings
@@ -18,6 +19,42 @@ from apps.accounts.models import User
 from apps.accounts.utils.did_utils import verify_federated_vc
 
 logger = logging.getLogger(__name__)
+
+
+def parse_vc_input(vc_input: str) -> dict:
+    """
+    Parse VC input that could be either JSON or Python dict format.
+
+    Args:
+        vc_input: The VC input string (could be JSON or Python dict format)
+
+    Returns:
+        The parsed VC as a dictionary
+
+    Raises:
+        ValueError: If the input cannot be parsed as either format
+    """
+    # First try to parse as JSON
+    try:
+        return json.loads(vc_input)
+    except json.JSONDecodeError:
+        pass
+
+    # If JSON parsing fails, try to convert Python dict format to JSON format
+    try:
+        # Handle HTML-escaped content (from UI copy/paste)
+        json_format = vc_input.replace("&#x27;", "'")
+        # Convert single quotes to double quotes for JSON compatibility
+        json_format = re.sub(r"'", '"', json_format)
+        # Handle Python-specific syntax like True/False/None
+        json_format = re.sub(r"\bTrue\b", "true", json_format)
+        json_format = re.sub(r"\bFalse\b", "false", json_format)
+        json_format = re.sub(r"\bNone\b", "null", json_format)
+        return json.loads(json_format)
+    except Exception:
+        raise ValueError(
+            "Invalid VC format. Please provide valid JSON or Python dict format."
+        )
 
 
 class DIDLoginView(View):
@@ -55,15 +92,17 @@ class DIDLoginView(View):
             )
 
         try:
-            vc_data = json.loads(vc_json)
+            logger.debug(f"Raw VC input (first 200 chars): {vc_json[:200]}")
+            vc_data = parse_vc_input(vc_json)
             issuer_did = vc_data.get("issuer", "")
             credential_subject = vc_data.get("credentialSubject", {})
             user_did = credential_subject.get("id", "")
 
             logger.debug(f"VC issuer: {issuer_did}, subject DID: {user_did}")
 
-            # Verify the VC
-            if not verify_federated_vc(vc_json, issuer_did):
+            # Verify the VC (convert back to JSON string for verification)
+            vc_json_string = json.dumps(vc_data)
+            if not verify_federated_vc(vc_json_string, issuer_did):
                 logger.warning(f"VC verification failed for issuer: {issuer_did}")
                 return render(
                     request,
@@ -104,13 +143,13 @@ class DIDLoginView(View):
 
             return redirect(next_url)
 
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON in VC")
+        except ValueError as e:
+            logger.error(f"Invalid VC format: {e}")
             return render(
                 request,
                 "accounts/did_login.html",
                 {
-                    "error": "Invalid JSON format in Verifiable Credential",
+                    "error": str(e),
                     "vc": vc_json,
                     "next": next_url,
                 },

@@ -47,13 +47,10 @@ class DIDAuthBackend(ModelBackend):
                 return None
 
         # Authenticate using VC
-        if vc and vc_proof:
+        if vc:
             try:
-                # Parse VC proof
-                proof = json.loads(vc_proof)
-
                 # Verify the VC
-                if not verify_vc(vc, {"proof": proof}):
+                if not verify_vc(vc, {"proof": json.loads(vc_proof)}):
                     print("VC verification failed")
                     return None
 

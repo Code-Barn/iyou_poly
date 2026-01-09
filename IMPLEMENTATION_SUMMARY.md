@@ -4,6 +4,8 @@
 
 This document summarizes the implementation of federated authentication in the Polly project, achieving the vision of a hybrid identity provider that removes single points of failure while maintaining user convenience and security.
 
+**Latest Update**: Added flexible VC parsing for DID login to handle multiple input formats (JSON, Python dict, HTML-escaped).
+
 ## ✅ Completed Features
 
 ### 1. **Core VC Generation Fix**
@@ -11,6 +13,12 @@ This document summarizes the implementation of federated authentication in the P
 - **Solution**: Field extraction/restoration workaround in `issue_vc()`
 - **Result**: Reliable VC generation with any credential structure
 - **Files**: `apps/accounts/utils/did_utils.py`
+
+### 2. **Flexible VC Parsing for DID Login**
+- **Problem**: "Invalid JSON format" errors when pasting VCs from UI
+- **Solution**: Multi-format VC parser in `parse_vc_input()` function
+- **Result**: Users can copy/paste VCs in any format (JSON, Python dict, HTML-escaped)
+- **Files**: `apps/accounts/did_views.py`
 
 ### 2. **Trust Management System**
 - **Open Trust Model**: Accept any federated server by default
@@ -133,28 +141,30 @@ def _create_user_from_vc(self, vc_data, user_did):
 
 ## 🚀 Benefits Achieved
 
-### 1. **No Single Point of Failure**
+1. **No Single Point of Failure**
 - Multiple authentication methods available
 - Fallback options if one method fails
 - Resilient to external service outages
 
-### 2. **User-Centric Design**
+2. **User-Centric Design**
 - Clear guidance toward secure methods
 - Educational content about benefits
 - Smooth onboarding experience
 - Multiple login options
+- **Flexible VC input**: Users can copy/paste VCs in any format
 
-### 3. **Future-Ready Architecture**
+3. **Future-Ready Architecture**
 - Open trust model allows flexibility
 - Easy to restrict trust later if needed
 - Foundation for Web of Trust implementation
 - Scalable to large federations
 
-### 4. **Security First**
+4. **Security First**
 - Cryptographic verification of VCs
 - No password storage for DID-only users
 - Clear security indicators for users
 - Configurable trust requirements
+- Robust input validation and error handling
 
 ## 🎯 Success Metrics
 

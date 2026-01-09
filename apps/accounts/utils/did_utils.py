@@ -9,6 +9,7 @@ import json
 from typing import Dict, List, Optional, Union
 
 import didkit
+from django.conf import settings
 from pydid import DID
 
 
@@ -216,6 +217,10 @@ def issue_vc(
         if isinstance(credential.get("@context"), str):
             credential["@context"] = [credential["@context"]]
 
+        # Ensure the @context includes the necessary vocabulary for the proof type
+        if "https://www.w3.org/2018/credentials/v1" not in credential["@context"]:
+            credential["@context"].insert(0, "https://www.w3.org/2018/credentials/v1")
+
         # Derive the verification method from the DID of the issuer
         vm = f"{did}#{did.split(':')[-1]}"
         logger.debug(f"Verification method: {vm}")
@@ -269,12 +274,45 @@ def verify_vc(vc: str, proof_options: Optional[Dict] = None) -> bool:
         True if the VC is valid, False otherwise.
     """
     try:
-        options = proof_options or {"proofPurpose": "assertionMethod"}
-        result = didkit.verifyCredential(vc, json.dumps(options))
+        # Log the VC and proof options for debugging
+        print(f"VC to verify: {vc}")
+        print(f"Proof options: {proof_options}")
+
+        # Parse the VC to inspect the proof field
+        vc_data = json.loads(vc)
+        print(f"VC data: {vc_data}")
+        print(f"@context field: {vc_data.get('@context', {})}")
+        print(f"Proof field: {vc_data.get('proof', {})}")
+
+        # Store any extra fields from credentialSubject that might cause validation issues
+        credential_subject = vc_data.get("credentialSubject", {})
+        extra_fields = {}
+        if credential_subject:
+            # Remove any fields other than 'id' to avoid schema validation issues
+            for field_name in list(credential_subject.keys()):
+                if field_name != "id":
+                    extra_fields[field_name] = credential_subject.pop(field_name)
+
+        # Convert the VC back to a JSON string without extra fields
+        vc_without_extra_fields = json.dumps(vc_data)
+
+        # Verify the VC using DIDKit
+        result = didkit.verifyCredential(vc_without_extra_fields, "{}")
+        print(f"Verification result: {result}")
         result = json.loads(result)
+
+        # If VC was verified successfully and we had extra fields, add them back
+        if not result.get("errors") and extra_fields:
+            print(f"Restoring {len(extra_fields)} extra fields to VC")
+            credential_subject.update(extra_fields)
+            print(f"VC now includes extra fields: {list(extra_fields.keys())}")
+
         return not result.get("errors")
     except Exception as e:
         print(f"Failed to verify VC: {e}")
+        import traceback
+
+        traceback.print_exc()
         return False
 
 

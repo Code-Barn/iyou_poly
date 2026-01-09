@@ -10,46 +10,28 @@
             {% include "partials/_alert.html" with type="error" message=error %}
         {% endif %}
 
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <p class="text-yellow-700">
+                <strong>Secure, Passwordless Login:</strong> Paste your entire Verifiable Credential JSON below to log in.
+                This method is more secure than passwords and works across all federated servers.
+            </p>
+        </div>
+
         <form method="post" class="space-y-4">
             {% csrf_token %}
-
-            <div>
-                <label for="did" class="block text-sm font-medium text-gray-700">Decentralized Identifier (DID)</label>
-                <input
-                    type="text"
-                    name="did"
-                    id="did"
-                    required
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-[color:var(--primary-color)] focus:border-[color:var(--primary-color)]"
-                    placeholder="did:key:example123456789"
-                >
-            </div>
 
             <div>
                 <label for="vc" class="block text-sm font-medium text-gray-700">Verifiable Credential (VC)</label>
                 <textarea
                     name="vc"
                     id="vc"
-                    rows="5"
+                    rows="10"
                     class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-[color:var(--primary-color)] focus:border-[color:var(--primary-color)]"
-                    placeholder='{"@context": "https://www.w3.org/2018/credentials/v1", "type": "VerifiableCredential", ...}'
+                    placeholder='Paste your entire Verifiable Credential (VC) as a JSON string, e.g.: {"@context": ["https://www.w3.org/2018/credentials/v1"], "type": ["VerifiableCredential", "AuthenticationCredential"], ...}'
+                    required
                 ></textarea>
                 <p class="mt-1 text-sm text-gray-500">
-                    Paste your Verifiable Credential (VC) as a JSON string.
-                </p>
-            </div>
-
-            <div>
-                <label for="vc_proof" class="block text-sm font-medium text-gray-700">VC Proof</label>
-                <textarea
-                    name="vc_proof"
-                    id="vc_proof"
-                    rows="3"
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-[color:var(--primary-color)] focus:border-[color:var(--primary-color)]"
-                    placeholder='{"type": "Ed25519Signature2020", "proofPurpose": "authentication", ...}'
-                ></textarea>
-                <p class="mt-1 text-sm text-gray-500">
-                    Paste the proof for your VC as a JSON string.
+                    You can obtain this from your VC management page or from any federated server where you have an account.
                 </p>
             </div>
 
