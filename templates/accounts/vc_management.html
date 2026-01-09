@@ -17,13 +17,8 @@
             {% if auth_vc %}
                 <div class="mb-8">
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Authentication Credential</h3>
-                    <div class="bg-gray-50 rounded-lg relative">
-                        <div class="p-4 pb-0 border-b border-gray-200">
-                            <h4 class="font-medium text-gray-900 mb-2">Authentication Credential</h4>
-                        </div>
-                        <div class="p-4 pt-0 overflow-x-auto">
-                            <pre class="text-sm text-gray-700" id="auth-vc-json">{{ auth_vc|escape }}</pre>
-                        </div>
+                    <div class="bg-gray-50 rounded-lg p-4 relative">
+                        <pre class="text-sm text-gray-700 overflow-x-auto" id="auth-vc-json">{{ auth_vc|escape }}</pre>
                         <div class="absolute top-2 right-2 flex space-x-2">
                             <button onclick="copyToClipboard('auth-vc-json', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                                 Copy
@@ -33,12 +28,6 @@
                             </a>
                         </div>
                     </div>
-                </div>
-            {% else %}
-                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-                    <p class="text-yellow-700">
-                        No authentication credential found. Generate a Decentralized Identifier (DID) and Verifiable Credential (VC) to enable secure, passwordless authentication.
-                    </p>
                 </div>
             {% endif %}
 

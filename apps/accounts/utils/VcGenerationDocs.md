@@ -1,4 +1,4 @@
-# Verifiable Credential Generation Documentation
+# Verifiable Credential Generation & Federated Authentication Documentation
 
 ## Overview
 
@@ -6,7 +6,13 @@ This document explains the VC (Verifiable Credential) generation process in the 
 
 ## Background
 
-The Polly project uses DIDKit for generating and verifying Verifiable Credentials according to the W3C Verifiable Credentials Data Model specification. VCs are used for authentication and authorization within the system.
+The Polly project uses DIDKit for generating and verifying Verifiable Credentials according to the W3C Verifiable Credentials Data Model specification. VCs are used for authentication and authorization within the system, enabling a hybrid federated identity approach that combines:
+
+- **DID-based authentication** (recommended)
+- **Traditional username/password** (fallback)
+- **OIDC providers** (external, optional)
+
+This hybrid approach removes single points of failure while providing user convenience.
 
 ## The "Key Expansion Failed" Issue
 
@@ -27,6 +33,7 @@ This error was misleading. The actual issue was DIDKit's strict schema validatio
 1. **Extra fields in credentialSubject**: Fields like `name`, `email`, `username`, etc.
 2. **Missing JSON-LD context**: No schema definitions for custom fields
 3. **Complex credential types**: Custom credential types without proper context
+4. **Trust verification failures**: Issuer not in trusted list (when trust restrictions are enabled)
 
 ## The Solution
 
@@ -95,6 +102,14 @@ def issue_vc(
 1. **Include all necessary data**: Add any application-specific fields to the `credentialSubject`
 2. **Don't worry about context**: The function handles schema validation issues automatically
 3. **Use standard credential types**: Stick to recognized types like `VerifiableCredential` and `AuthenticationCredential`
+4. **Consider trust requirements**: Be aware of trust model settings when issuing VCs for federated use
+
+### Federated Authentication Best Practices
+
+1. **Start with open trust model**: Allow any federated server initially
+2. **Gradually restrict trust**: Add trusted issuer list as needed
+3. **Monitor VC usage**: Track which issuers are being used
+4. **Educate users**: Help them understand DID benefits and security
 
 ### Example Usage
 
@@ -184,6 +199,33 @@ if vc:
 3. **Field Restoration**: The original fields are added back to the VC's `credentialSubject`
 4. **Result**: A fully valid VC that includes all application data
 
+### Trust Management System
+
+The trust management system provides flexible control over which issuers are accepted:
+
+```python
+# Open trust model (default)
+REQUIRE_TRUSTED_ISSUERS = False  # Accept any issuer
+TRUSTED_ISSUERS = []  # Not used in open mode
+
+# Restricted trust model
+REQUIRE_TRUSTED_ISSUERS = True  # Only accept listed issuers
+TRUSTED_ISSUERS = [
+    "did:key:trusted_server_1",
+    "did:key:trusted_server_2",
+]
+```
+
+### Auto-Provisioning
+
+New users can be automatically created from VC data:
+
+```python
+AUTO_PROVISION_DID_USERS = True  # Default: enabled
+```
+
+This allows users to register simply by logging in with their VC from another federated server.
+
 ### Why This Approach
 
 - **Maintains VC validity**: The core VC remains valid according to W3C standards
@@ -199,6 +241,17 @@ if vc:
 2. **Field validation**: Add validation for common field names and types
 3. **Performance optimization**: For bulk VC generation, consider batching
 4. **Custom credential types**: Support for domain-specific credential types
+5. **Web of Trust**: Implement decentralized trust model for large-scale federation
+6. **VC revocation**: Add support for checking revoked credentials
+7. **Cross-server identity resolution**: Query other federated servers for unknown DIDs
+
+### Migration Path to Federation
+
+1. **Start with single-server**: Current implementation
+2. **Add trust relationships**: Manual trust establishment
+3. **Implement federation protocol**: Automatic trust and identity resolution
+4. **Add monitoring**: Track federation health and performance
+5. **Optimize**: Improve performance for large federations
 
 ### Migration Path
 
@@ -224,3 +277,15 @@ If future requirements demand proper JSON-LD contexts:
 - **Solution**: Implemented field extraction/restoration workaround
 - **Impact**: All VC generation now works reliably with any credential structure
 - **Files Modified**: `apps/accounts/utils/did_utils.py`
+
+### 2026-01-09 - Federated Authentication
+
+- **Issue**: Need for hybrid authentication system
+- **Solution**: Implemented DID-based login with trust management
+- **Impact**: Users can log in with VCs from any federated server
+- **Files Modified**:
+  - `apps/accounts/utils/did_utils.py` (trust management)
+  - `apps/accounts/did_views.py` (new DID login views)
+  - `templates/accounts/did_login.html` (DID login page)
+  - `templates/registration/login.html` (hybrid login hub)
+  - `config/settings.py` (trust configuration)

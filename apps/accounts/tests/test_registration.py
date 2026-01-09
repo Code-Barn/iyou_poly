@@ -91,7 +91,6 @@ def test_did_based_login():
         vc = json.dumps(vc_data)
 
         # Fill out the DID login form
-        page.fill("input[name='did']", did)
         page.fill("textarea[name='vc']", vc)
         page.fill("textarea[name='vc_proof']", vc_proof)
 
@@ -166,7 +165,6 @@ def test_voting_flow():
         vc_proof = json.dumps(vc_data.get("proof", {}))
 
         # Fill out the DID login form
-        page.fill("input[name='did']", did)
         page.fill("textarea[name='vc']", vc)
         page.fill("textarea[name='vc_proof']", vc_proof)
 

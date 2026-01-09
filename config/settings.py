@@ -163,3 +163,13 @@ STATIC_URL = "static/"
 # Authentication
 LOGIN_REDIRECT_URL = "poll_list"
 LOGOUT_REDIRECT_URL = "poll_list"
+
+# Federated Identity and Trust Management
+# https://docs.djangoproject.com/en/6.0/topics/auth/customizing/
+
+# Trust model configuration
+# REQUIRE_TRUSTED_ISSUERS = False  # Set to True to enable trusted issuer list
+# TRUSTED_ISSUERS = []  # List of trusted issuer DIDs when REQUIRE_TRUSTED_ISSUERS is True
+
+# Open trust model by default (allow any federated server)
+# This can be changed to a more restrictive model in production
