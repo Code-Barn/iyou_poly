@@ -134,12 +134,21 @@ class VCManagementView(View):
 
         # Get the user's authentication VC
         auth_vc = request.user.get_authentication_vc()
+
+        # Get other credentials (exclude authentication credential)
+        other_vcs = []
+        for vc in request.user.vcs:
+            # Check if this VC is NOT an authentication credential
+            vc_types = vc.get("type", [])
+            if not ("AuthenticationCredential" in vc_types):
+                other_vcs.append(vc)
+
         return render(
             request,
             "accounts/vc_management.html",
             {
                 "auth_vc": auth_vc,
-                "vcs": request.user.vcs,
+                "vcs": other_vcs,
             },
         )
 

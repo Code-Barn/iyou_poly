@@ -1,14 +1,15 @@
 <div id="vc-container">
+    {% load vc_filters %}
     {% if auth_vc %}
         <div class="mb-8">
             <h3 class="text-lg font-semibold text-gray-900 mb-2">Authentication Credential</h3>
             <div class="bg-gray-50 rounded-lg p-4 relative">
-                <pre class="text-sm text-gray-700 overflow-x-auto" id="auth-vc-json">{{ auth_vc|escape }}</pre>
+                <pre class="text-sm text-gray-700 overflow-x-auto" id="auth-vc-json">{{ auth_vc|to_json_compact|escape }}</pre>
                 <div class="absolute top-2 right-2 flex space-x-2">
                     <button onclick="copyToClipboard('auth-vc-json', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                         Copy
                     </button>
-                    <a href="data:application/json;charset=utf-8,{{ auth_vc|urlencode }}" download="auth_vc.json" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <a href="data:application/json;charset=utf-8,{{ auth_vc|to_json_compact|urlencode }}" download="auth_vc.json" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                         Download
                     </a>
                 </div>
@@ -32,7 +33,7 @@
                             </h4>
                         </div>
                         <div class="p-4 pt-0 overflow-x-auto">
-                            <pre class="text-sm text-gray-700" id="vc-json-{{ forloop.counter }}">{{ vc|escape }}</pre>
+                            <pre class="text-sm text-gray-700" id="vc-json-{{ forloop.counter }}">{{ vc|to_json_compact|escape }}</pre>
                         </div>
                         <div class="absolute top-2 right-2 flex space-x-2">
                             <button onclick="copyToClipboard('vc-json-{{ forloop.counter }}', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">

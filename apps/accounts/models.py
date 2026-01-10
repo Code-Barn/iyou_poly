@@ -56,7 +56,7 @@ class User(AbstractUser):
         Returns:
             List of VCs matching the type.
         """
-        return [vc for vc in self.vcs if vc.get("type") == vc_type]
+        return [vc for vc in self.vcs if vc.get("type") and vc_type in vc.get("type")]
 
     def get_authentication_vc(self) -> dict:
         """
