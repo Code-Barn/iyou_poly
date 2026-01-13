@@ -1,114 +1,111 @@
 """
-Test script to simulate the registration and VC generation process.
+Test script to verify DID and VC functionality in Polly.
+
+This script tests:
+1. DID generation using didkit.keyToDID
+2. VC issuance using issue_vc
+3. VC verification using verify_vc
 """
 
 import json
 import logging
 
 import didkit
+from django.test import TestCase
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def test_did_vc_generation():
-    """
-    Test the DID and VC generation process.
-    """
-    # Generate a DID
-    key = didkit.generateEd25519Key()
-    did = didkit.keyToDID("key", key)
-    logger.debug(f"Generated DID: {did}")
-    logger.debug(f"Key: {key}")
-    logger.debug(f"Key type: {type(key)}")
+class DIDVCTest(TestCase):
+    """Test DID and VC functionality."""
 
-    # Parse the key to see its structure
-    try:
-        key_dict = json.loads(key)
-        logger.debug(f"Key structure: {json.dumps(key_dict, indent=2)}")
+    def setUp(self):
+        """Set up test data."""
+        # Generate a key and DID
+        self.key = didkit.generateEd25519Key()
+        self.did = didkit.keyToDID("key", self.key)
+        logger.info(f"Generated DID: {self.did}")
+        logger.info(f"Key: {self.key}")
 
-        # Check if the key has the required 'd' parameter
-        if "d" not in key_dict:
-            logger.error("Key is missing the 'd' (private key) parameter!")
-        else:
-            logger.debug(f"Private key 'd' length: {len(key_dict['d'])}")
+    def test_did_generation(self):
+        """Test DID generation using didkit.keyToDID."""
+        self.assertTrue(self.did.startswith("did:key:z"))
+        self.assertEqual(len(self.did.split(":")), 3)
 
-        # Check base64url encoding
-        import base64
-        import re
+    def test_vc_issuance(self):
+        """Test VC issuance using issue_vc."""
+        from apps.accounts.utils.did_utils import issue_vc
 
-        # Check if the values are proper base64url
-        x_value = key_dict.get("x", "")
-        d_value = key_dict.get("d", "")
+        credential = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential", "AuthenticationCredential"],
+            "issuer": self.did,
+            "issuanceDate": "2023-01-01T00:00:00Z",
+            "credentialSubject": {
+                "id": self.did,
+                "name": "testuser",
+            },
+        }
 
-        logger.debug(f"x value: {x_value}")
-        logger.debug(f"d value: {d_value}")
+        vc = issue_vc(credential, self.did, self.key)
+        self.assertIsNotNone(vc)
+        vc_data = json.loads(vc)
+        self.assertEqual(vc_data["issuer"], self.did)
+        self.assertEqual(vc_data["credentialSubject"]["id"], self.did)
+        self.assertEqual(vc_data["credentialSubject"]["name"], "testuser")
+        logger.info("VC issued successfully")
 
-        # Check for invalid base64url characters
-        base64url_pattern = r"^[A-Za-z0-9_-]+$"
-        if not re.match(base64url_pattern, x_value):
-            logger.error(f"x value contains invalid base64url characters: {x_value}")
-        if not re.match(base64url_pattern, d_value):
-            logger.error(f"d value contains invalid base64url characters: {d_value}")
+    def test_vc_verification(self):
+        """Test VC verification using verify_vc."""
+        from apps.accounts.utils.did_utils import issue_vc, verify_vc
 
-        # Check for padding characters
-        if "=" in x_value:
-            logger.error(f"x value contains padding (=): {x_value}")
-        if "=" in d_value:
-            logger.error(f"d value contains padding (=): {d_value}")
+        credential = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential", "AuthenticationCredential"],
+            "issuer": self.did,
+            "issuanceDate": "2023-01-01T00:00:00Z",
+            "credentialSubject": {
+                "id": self.did,
+                "name": "testuser",
+            },
+        }
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse key: {e}")
+        vc = issue_vc(credential, self.did, self.key)
+        self.assertIsNotNone(vc)
 
-    # Derive the verification method from the key
-    vm = didkit.keyToVerificationMethod("key", key)
-    logger.debug(f"Verification method: {vm}")
+        # Verify the VC using the did_key
+        is_valid = verify_vc(vc, did_key=json.loads(self.key))
+        self.assertTrue(is_valid)
+        logger.info("VC verified successfully")
 
-    # Define the credential
-    credential = {
-        "@context": ["https://www.w3.org/2018/credentials/v1"],
-        "type": ["VerifiableCredential", "AuthenticationCredential"],
-        "issuer": did,
-        "issuanceDate": "2023-01-01T00:00:00Z",
-        "credentialSubject": {
-            "id": did,
-        },
-    }
-    logger.debug(f"Credential: {credential}")
+    def test_vc_verification_failure(self):
+        """Test VC verification failure with an invalid did_key."""
+        from apps.accounts.utils.did_utils import issue_vc, verify_vc
 
-    # Store the name parameter to re-add it after issuing the VC
-    name = "testuser"
+        credential = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential", "AuthenticationCredential"],
+            "issuer": self.did,
+            "issuanceDate": "2023-01-01T00:00:00Z",
+            "credentialSubject": {
+                "id": self.did,
+                "name": "testuser",
+            },
+        }
 
-    # Define the options
-    options = {
-        "proofPurpose": "assertionMethod",
-        "verificationMethod": vm,
-    }
-    logger.debug(f"Options: {options}")
+        vc = issue_vc(credential, self.did, self.key)
+        self.assertIsNotNone(vc)
 
-    # Issue the credential
-    # Try using the key directly without JSON serialization
-    vc = didkit.issueCredential(
-        json.dumps(credential),
-        json.dumps(options),
-        key,
-    )
-    logger.debug(f"VC: {vc}")
-
-    if vc:
-        logger.debug("VC issued successfully")
-
-        # Re-add the name parameter to the VC
-        vc_dict = json.loads(vc)
-        vc_dict["credentialSubject"]["name"] = name
-        vc = json.dumps(vc_dict)
-
-        return True
-    else:
-        logger.error("VC issuance failed")
-        return False
+        # Verify the VC with an invalid did_key
+        invalid_key = didkit.generateEd25519Key()
+        is_valid = verify_vc(vc, did_key=json.loads(invalid_key))
+        self.assertFalse(is_valid)
+        logger.info("VC verification correctly failed with invalid did_key")
 
 
 if __name__ == "__main__":
-    test_did_vc_generation()
+    import unittest
+
+    unittest.main()

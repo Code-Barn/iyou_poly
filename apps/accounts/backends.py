@@ -49,21 +49,34 @@ class DIDAuthBackend(ModelBackend):
         # Authenticate using VC
         if vc:
             try:
-                # Verify the VC
-                if not verify_vc(vc, {"proof": json.loads(vc_proof)}):
-                    print("VC verification failed")
-                    return None
+                import logging
 
-                # Extract the DID from the VC
+                logger = logging.getLogger(__name__)
+                logger.debug(f"VC for authentication: {vc}")
+
+                # Get the user and their DID key
                 vc_data = json.loads(vc)
                 vc_did = vc_data.get("credentialSubject", {}).get("id")
-
                 if not vc_did:
-                    print("No DID found in VC")
+                    logger.debug("No DID found in VC")
                     return None
 
-                # Fetch the user by DID
-                user = User.objects.get(did=vc_did)
+                try:
+                    user = User.objects.get(did=vc_did)
+                    did_key = user.did_key
+                    logger.debug(f"User DID key: {did_key}")
+                except User.DoesNotExist:
+                    logger.debug(f"User with DID {vc_did} not found")
+                    return None
+
+                # Verify the VC using verify_federated_vc with the user's did_key
+                from apps.accounts.utils.did_utils import verify_federated_vc
+
+                if not verify_federated_vc(vc, did_key=did_key):
+                    logger.debug("VC verification failed")
+                    return None
+
+                # Return the user if VC verification succeeds
                 return user
             except User.DoesNotExist:
                 print(f"User with DID {vc_did} not found")

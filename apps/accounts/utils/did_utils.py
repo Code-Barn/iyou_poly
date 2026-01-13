@@ -31,7 +31,7 @@ def generate_did(method: str = "key", key_type: str = "Ed25519") -> str:
         if key_type == "Ed25519":
             key = didkit.generateEd25519Key()
         elif key_type == "Secp256k1":
-            key = didkit.generate_Secp256k1Key()
+            key = didkit.generateSecp256k1Key()
         else:
             raise ValueError(f"Unsupported key type: {key_type}")
         did = didkit.keyToDID(method, key)
@@ -140,7 +140,7 @@ def resolve_did(did_str: str) -> Optional[Dict]:
         The resolved DID Document as a dictionary, or None if resolution fails.
     """
     try:
-        did_document = didkit.resolve_did(did_str, "application/did+ld+json")
+        did_document = didkit.resolveDID(did_str, "application/did+ld+json")
         return json.loads(did_document)
     except Exception as e:
         print(f"Failed to resolve DID {did_str}: {e}")
@@ -150,8 +150,8 @@ def resolve_did(did_str: str) -> Optional[Dict]:
 def issue_vc(
     credential: Dict,
     did: str,
-    key: str,
-    proof_type: str = "Ed25519Signature2020",
+    key: Union[str, Dict],
+    proof_type: str = "Ed25519Signature2018",
 ) -> Optional[str]:
     """
     Issue a Verifiable Credential (VC) using DIDKit.
@@ -167,7 +167,7 @@ def issue_vc(
                    preserved in the final VC.
         did: The DID of the issuer.
         key: The private key of the issuer (in JWK format as a string or dict).
-        proof_type: The proof type to use (e.g., "Ed25519Signature2020").
+        proof_type: The proof type to use (e.g., "Ed25519Signature2018").
 
     Returns:
         The issued VC as a JSON string, or None if issuance fails.
@@ -177,19 +177,6 @@ def issue_vc(
         1. Removing non-standard fields before DIDKit processing
         2. Generating a valid VC with standard fields only
         3. Restoring all original fields to the final VC
-
-    Example:
-        credential = {
-            "@context": ["https://www.w3.org/2018/credentials/v1"],
-            "type": ["VerifiableCredential", "AuthenticationCredential"],
-            "issuer": "did:key:z6Mk...",
-            "credentialSubject": {
-                "id": "did:key:z6Mk...",
-                "name": "John Doe",  # This will be preserved
-                "email": "john@example.com",  # This will be preserved
-            },
-        }
-        vc = issue_vc(credential, did, key)
     """
     try:
         import json
@@ -200,6 +187,16 @@ def issue_vc(
         # Ensure the key is a JSON string of a JWK
         if isinstance(key, dict):
             key = json.dumps(key)
+        elif isinstance(key, str):
+            # Ensure the string is valid JSON
+            try:
+                json.loads(key)
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON format for key")
+                return None
+        else:
+            logger.error(f"Invalid key type: {type(key)}")
+            return None
 
         logger.debug(f"Key: {key}")
         logger.debug(f"Key type: {type(key)}")
@@ -221,6 +218,14 @@ def issue_vc(
         if "https://www.w3.org/2018/credentials/v1" not in credential["@context"]:
             credential["@context"].insert(0, "https://www.w3.org/2018/credentials/v1")
 
+        # Remove the proof field if it exists to avoid duplication
+        if "proof" in credential:
+            del credential["proof"]
+
+        # Remove the proof field if it exists to avoid duplication
+        if "proof" in credential:
+            del credential["proof"]
+
         # Derive the verification method from the DID of the issuer
         vm = f"{did}#{did.split(':')[-1]}"
         logger.debug(f"Verification method: {vm}")
@@ -234,12 +239,14 @@ def issue_vc(
         logger.debug(f"Credential (without extra fields): {credential}")
         logger.debug(f"Options: {options}")
 
+        logger.debug(f"Issuing VC with key: {key}")
         # Issue the credential with only standard fields
         vc = didkit.issueCredential(
             json.dumps(credential),
             json.dumps(options),
             key,
         )
+        logger.debug(f"VC issued: {vc}")
 
         # If VC was issued successfully and we had extra fields, add them back
         if vc and extra_fields:
@@ -255,34 +262,40 @@ def issue_vc(
                 )
 
         return vc
-
-        return vc
     except Exception as e:
         print(f"Failed to issue VC: {e}")
         return None
 
 
-def verify_vc(vc: str, proof_options: Optional[Dict] = None) -> bool:
+def verify_vc(
+    vc: str, proof_options: Optional[Dict] = None, did_key: Optional[Dict] = None
+) -> bool:
     """
-    Verify a Verifiable Credential (VC) using DIDKit.
+    Verify a Verifiable Credential (VC) using DIDKit's verifyCredential function.
+
+    This function verifies a VC by delegating to DIDKit's `verifyCredential` function,
+    which handles JWS verification and DID resolution automatically.
 
     Args:
         vc: The VC to verify (as a JSON string).
-        proof_options: Optional proof options (as a dictionary).
+        proof_options: Optional proof options (ignored if `did_key` is provided).
+        did_key: Optional private key (JWK format as a dictionary) for manual verification.
+                Not used if DIDKit verification is successful.
 
     Returns:
         True if the VC is valid, False otherwise.
     """
-    try:
-        # Log the VC and proof options for debugging
-        print(f"VC to verify: {vc}")
-        print(f"Proof options: {proof_options}")
+    import json
+    import logging
 
-        # Parse the VC to inspect the proof field
+    logger = logging.getLogger(__name__)
+    logger.debug("Starting VC verification")
+    logger.debug(f"VC to verify: {vc}")
+
+    try:
+        # Parse the VC to inspect it
         vc_data = json.loads(vc)
-        print(f"VC data: {vc_data}")
-        print(f"@context field: {vc_data.get('@context', {})}")
-        print(f"Proof field: {vc_data.get('proof', {})}")
+        logger.debug(f"VC to verify: {vc_data}")
 
         # Store any extra fields from credentialSubject that might cause validation issues
         credential_subject = vc_data.get("credentialSubject", {})
@@ -295,24 +308,41 @@ def verify_vc(vc: str, proof_options: Optional[Dict] = None) -> bool:
 
         # Convert the VC back to a JSON string without extra fields
         vc_without_extra_fields = json.dumps(vc_data)
+        logger.debug(f"VC without extra fields: {vc_without_extra_fields}")
 
-        # Verify the VC using DIDKit
-        result = didkit.verifyCredential(vc_without_extra_fields, "{}")
-        print(f"Verification result: {result}")
-        result = json.loads(result)
+        # Prepare verification options
+        options = proof_options or {"proofPurpose": "assertionMethod"}
 
-        # If VC was verified successfully and we had extra fields, add them back
-        if not result.get("errors") and extra_fields:
-            print(f"Restoring {len(extra_fields)} extra fields to VC")
-            credential_subject.update(extra_fields)
-            print(f"VC now includes extra fields: {list(extra_fields.keys())}")
+        # Extract relevant fields from the proof object
+        proof = vc_data.get("proof", {})
+        if proof:
+            if proof.get("verificationMethod"):
+                options["verificationMethod"] = proof.get("verificationMethod")
+            if proof.get("created"):
+                options["created"] = proof.get("created")
 
-        return not result.get("errors")
+        # Use DIDKit's verifyCredential function for verification
+        logger.debug("Using DIDKit's verifyCredential for verification")
+        try:
+            result = didkit.verifyCredential(
+                vc_without_extra_fields, json.dumps(options)
+            )
+            verification_result = json.loads(result)
+            logger.debug(f"DIDKit verification result: {verification_result}")
+
+            if verification_result.get("errors"):
+                logger.error(
+                    f"DIDKit verification errors: {verification_result['errors']}"
+                )
+                return False
+            else:
+                logger.debug("DIDKit verification succeeded")
+                return True
+        except Exception as e:
+            logger.error(f"DIDKit verification failed: {e}", exc_info=True)
+            return False
     except Exception as e:
-        print(f"Failed to verify VC: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"Failed to verify VC: {e}", exc_info=True)
         return False
 
 
@@ -350,19 +380,22 @@ def is_trusted_issuer(issuer_did: str) -> bool:
     return True  # Open trust model by default
 
 
-def verify_federated_vc(vc_json: str, issuer_did: str = None) -> bool:
+def verify_federated_vc(
+    vc_json: str, issuer_did: str = None, did_key: Optional[Dict] = None
+) -> bool:
     """
     Verify a VC that was issued by another federated server.
 
     Args:
         vc_json: The VC as a JSON string.
         issuer_did: Optional issuer DID for trust verification.
+        did_key: Optional private key (JWK format as a dictionary) for manual verification.
 
     Returns:
         True if the VC is valid and trusted, False otherwise.
     """
     # Step 1: Verify the cryptographic signature
-    if not verify_vc(vc_json):
+    if not verify_vc(vc_json, did_key=did_key):
         return False
 
     # Step 2: Extract issuer if not provided
@@ -377,10 +410,5 @@ def verify_federated_vc(vc_json: str, issuer_did: str = None) -> bool:
     if not is_trusted_issuer(issuer_did):
         print(f"Issuer {issuer_did} is not trusted")
         return False
-
-    # Additional checks can be added here for:
-    # - VC revocation status
-    # - VC expiration
-    # - Other business rules
 
     return True

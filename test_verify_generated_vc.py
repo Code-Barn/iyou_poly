@@ -48,7 +48,7 @@ def test_verify_generated_vc():
     # Verify the VC using verify_vc
     print("Verifying VC using verify_vc...")
     try:
-        is_valid = verify_vc(vc_json)
+        is_valid = verify_vc(vc_json, did_key=json.loads(key))
         print(f"Verification result: {is_valid}")
 
         if is_valid:
@@ -64,7 +64,7 @@ def test_verify_generated_vc():
     print("Verifying VC using verify_federated_vc...")
     issuer_did = vc.get("issuer")
     try:
-        is_valid = verify_federated_vc(vc_json, issuer_did)
+        is_valid = verify_federated_vc(vc_json, issuer_did, did_key=json.loads(key))
         print(f"Verification result: {is_valid}")
 
         if is_valid:

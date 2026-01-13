@@ -171,7 +171,8 @@ for vc in user.vcs:
 - **Revocation Checking**: Future enhancement to check for revoked credentials
 
 ### 3. Data Integrity
-- **DID/Key Matching**: Ensure user's DID matches their key (prevents verification failures)
+- **DID/Key Matching**: Ensure user's DID matches their key (prevents verification failures). Use `didkit.keyToDID` to construct the DID from the key.
+- **VC Verification**: Pass the `did_key` to `verify_federated_vc` for cryptographic verification during login.
 - **VC Storage**: Store VCs as JSON objects for easy manipulation
 - **Template Safety**: Use `|escape` filter to prevent XSS attacks
 
@@ -221,10 +222,13 @@ for vc in user.vcs:
 ```mermaid
 sequenceDiagram
     User->>System: Register (username/password)
-    System->>User: Generate DID & Authentication VC
+    System->>System: Generate key and DID using didkit
+    System->>System: Issue Authentication VC
+    System->>User: Return Authentication VC
     User->>System: Copy Authentication VC
     User->>System: Login with DID (paste VC)
-    System->>User: Verify VC and log in
+    System->>System: Verify VC using did_key
+    System->>User: Log in if verification succeeds
 ```
 
 ### 2. Group Membership

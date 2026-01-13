@@ -40,8 +40,21 @@ class DIDLoginView(View):
             user_did = vc_data["credentialSubject"]["id"]
             vc_proof = vc_data.get("proof", {})
 
+            # Fetch the user's did_key for verification
+            did_key = None
+            try:
+                user = User.objects.get(did=user_did)
+                if user.did_key:
+                    did_key = json.loads(user.did_key)
+            except User.DoesNotExist:
+                pass
+
             user = authenticate(
-                request, did=user_did, vc=vc_json, vc_proof=json.dumps(vc_proof)
+                request,
+                did=user_did,
+                vc=vc_json,
+                vc_proof=json.dumps(vc_proof),
+                did_key=did_key,
             )
             if user is not None:
                 login(request, user)
@@ -84,13 +97,14 @@ class RegisterView(View):
         form = UserCreationForm(request.POST)
         if form.is_valid():
             user = form.save(commit=False)
-            # Generate a DID for the new user
-            user.did = generate_did(method="key")
-            user.did_method = "key"
             # Generate a key pair for the user (in JWK format)
             key = json.loads(didkit.generateEd25519Key())
             user.did_key = json.dumps(key)
-            user.save()
+
+            # Construct the DID using didkit.keyToDID
+            user.did = didkit.keyToDID("key", json.dumps(key))
+            user.did_method = "key"
+            user.save()  # Save the user before issuing the VC
 
             # Issue an authentication VC for the user
             credential = {
@@ -104,9 +118,10 @@ class RegisterView(View):
                 },
             }
             # Issue the VC using the user's key
-            vc = issue_vc(credential, user.did, user.did_key)
+            vc = issue_vc(credential, user.did, key)  # Use the key dict directly
             if vc:
                 user.add_vc(json.loads(vc))
+                user.save()  # Save the user after adding the VC
             else:
                 import logging
 
@@ -175,25 +190,27 @@ class GenerateDIDAndVCView(View):
         user = request.user
 
         # Skip if the user already has a DID
-        if user.did:
+        if user.did and user.did_key:
             logger.debug(f"User {user.username} already has a DID: {user.did}")
-            # Force VC generation for debugging
-            logger.debug("Forcing VC generation for debugging")
+            logger.debug(f"Using existing did_key for VC generation")
 
-        # Generate a DID for the user
-        user.did = generate_did(method="key")
-        user.did_method = "key"
-        logger.debug(f"Generated DID for user {user.username}: {user.did}")
+        # Generate a DID for the user if they don't have one
+        if not user.did:
+            user.did = generate_did(method="key")
+            user.did_method = "key"
+            logger.debug(f"Generated DID for user {user.username}: {user.did}")
 
-        # Generate a key pair for the user (in JWK format)
-        key = json.loads(didkit.generateEd25519Key())
-        user.did_key = json.dumps(key)
-        user.save()
+        # Use existing did_key if available, otherwise generate a new one
+        if not user.did_key:
+            key = json.loads(didkit.generateEd25519Key())
+            user.did_key = json.dumps(key)
+            user.save()
+            logger.debug(f"Generated new did_key for user {user.username}")
+        else:
+            key = json.loads(user.did_key)
+            logger.debug(f"Using existing did_key for user {user.username}")
 
         # Issue an authentication VC for the user
-        import logging
-
-        logger = logging.getLogger(__name__)
         credential = {
             "@context": "https://www.w3.org/2018/credentials/v1",
             "type": ["VerifiableCredential", "AuthenticationCredential"],
@@ -205,7 +222,7 @@ class GenerateDIDAndVCView(View):
             },
         }
         # Issue the VC using the user's key
-        vc = issue_vc(credential, user.did, user.did_key)
+        vc = issue_vc(credential, user.did, key)
         if vc:
             logger.debug(f"VC issued successfully: {vc}")
             user.add_vc(json.loads(vc))

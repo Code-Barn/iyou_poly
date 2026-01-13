@@ -36,6 +36,11 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        "apps.accounts": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }
 

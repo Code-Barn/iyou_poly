@@ -48,8 +48,22 @@ from apps.accounts.utils.did_utils import verify_federated_vc
 
 # Verify a VC during login
 vc_json = request.POST.get('vc')
-if verify_federated_vc(vc_json):
-    user = authenticate(request, did=vc_json['credentialSubject']['id'])
+vc_data = json.loads(vc_json)
+user_did = vc_data['credentialSubject']['id']
+
+# Fetch the user's did_key for verification
+did_key = None
+try:
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    user = User.objects.get(did=user_did)
+    if user.did_key:
+        did_key = json.loads(user.did_key)
+except User.DoesNotExist:
+    pass
+
+if verify_federated_vc(vc_json, did_key=did_key):
+    user = authenticate(request, did=user_did, vc=vc_json)
     login(request, user)
 ```
 
@@ -202,9 +216,10 @@ class HybridAuthBackend(ModelBackend):
         # Try DID authentication
         did = kwargs.get('did')
         vc = kwargs.get('vc')
+        did_key = kwargs.get('did_key')
 
         if did and vc:
-            if verify_federated_vc(vc, did):
+            if verify_federated_vc(vc, did_key=did_key):
                 try:
                     user = User.objects.get(did=did)
                     return user
@@ -379,10 +394,12 @@ def get_authentication_options(user):
   - Ensure the provider's credentials (`SOCIAL_AUTH_<PROVIDER>_KEY` and `SOCIAL_AUTH_<PROVIDER>_SECRET`) are correct.
   - Verify that the provider's callback URL is configured correctly in the provider's dashboard.
 
-#### 2. DID Authentication Failing
-- **Symptom**: DID login fails with "Invalid Verifiable Credential".
+### 2. DID Authentication Failing
+- **Symptom**: DID login fails with "Invalid Verifiable Credential" or "Crypto error".
 - **Solution**:
   - Ensure the VC is valid and issued by a trusted issuer.
+  - Verify the DID is constructed using `didkit.keyToDID` from the user's `did_key`.
+  - Pass the `did_key` to `verify_federated_vc` for cryptographic verification.
   - Check the `FEDERATED_AUTH` settings in `settings.py`.
 
 #### 3. Hybrid Backend Not Working
