@@ -4,6 +4,8 @@ Polly is a decentralized/federated identity provider and federated database fron
 
 ## Features
 
+- **OpenID Connect (OIDC) Support**: Integrate with external identity providers like Google, GitHub, and more for seamless authentication.
+
 - **Decentralized Identity (DID) Support**: Manage DIDs, DID methods, and DID documents.
 - **Verifiable Credentials (VCs)**: Store, verify, and revoke verifiable credentials.
 - **Federated Identity Support**: Link multiple external identities to a single user.
@@ -51,6 +53,25 @@ Polly is a decentralized/federated identity provider and federated database fron
 - Develop interfaces for user management, data synchronization, and polling.
 
 ## Getting Started
+
+### OIDC Configuration
+To enable OIDC authentication, add the following configuration to your `settings.py`:
+
+```python
+# settings.py
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'social_core.backends.google.GoogleOAuth2',
+    'social_core.backends.github.GithubOAuth2',
+    'apps.accounts.backends.HybridAuthBackend',
+]
+
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = 'your-google-oauth2-key'
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = 'your-google-oauth2-secret'
+
+SOCIAL_AUTH_GITHUB_KEY = 'your-github-key'
+SOCIAL_AUTH_GITHUB_SECRET = 'your-github-secret'
+```
 
 ### Prerequisites
 - Python 3.13 or higher
@@ -139,6 +160,21 @@ python manage.py test
 ```
 
 ## Usage
+
+### OIDC Authentication
+Users can authenticate using external providers like Google or GitHub. The login page provides options for OIDC-based authentication:
+
+```html
+<!-- Example OIDC login buttons -->
+<a href="{% url 'social:begin' 'google-oauth2' %}"
+   class="block w-full text-center bg-red-600 text-white p-2 rounded">
+    Login with Google
+</a>
+<a href="{% url 'social:begin' 'github' %}"
+   class="block w-full text-center bg-gray-800 text-white p-2 rounded">
+    Login with GitHub
+</a>
+```
 
 ### Front-End
 - **Poll List**: Visit `http://localhost:8000/` to view all active polls.

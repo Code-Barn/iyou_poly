@@ -53,4 +53,6 @@ urlpatterns = [
         GenerateDIDAndVCView.as_view(),
         name="generate_did_and_vc",
     ),
+    # Social auth URLs for OIDC
+    path("social-auth/", include("social_django.urls", namespace="social")),
 ]

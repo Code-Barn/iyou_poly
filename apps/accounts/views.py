@@ -2,7 +2,7 @@
 Views for the `accounts` app.
 
 This module defines views for user authentication, registration, and profile management
-in the Polly project. It includes views for DID-based and federated authentication.
+in the Polly project. It includes views for DID-based, OIDC, and federated authentication.
 """
 
 import json
@@ -221,3 +221,24 @@ class GenerateDIDAndVCView(View):
                 "vcs": user.vcs,
             },
         )
+
+
+class OIDCCallbackView(View):
+    """
+    View to handle OIDC callback and complete authentication.
+
+    This view is called after successful OIDC authentication to
+    complete the login process.
+    """
+
+    def get(self, request):
+        """Handle OIDC callback and complete authentication."""
+        # The actual OIDC authentication is handled by social-auth-app-django
+        # This view is for any additional processing needed after OIDC login
+
+        # Check if user is already authenticated (OIDC flow completed)
+        if request.user.is_authenticated:
+            return redirect("poll_list")
+
+        # If not authenticated, redirect to login page
+        return redirect("login")

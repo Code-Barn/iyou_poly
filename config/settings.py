@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.poller.apps.PollerConfig",
+    "social_django",
 ]
 
 MIDDLEWARE = [
@@ -138,6 +139,9 @@ AUTH_PASSWORD_VALIDATORS = [
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "apps.accounts.backends.DIDAuthBackend",
+    "apps.accounts.backends.OIDCAuthBackend",
+    "social_core.backends.google.GoogleOAuth2",
+    "social_core.backends.github.GithubOAuth2",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -163,6 +167,39 @@ STATIC_URL = "static/"
 # Authentication
 LOGIN_REDIRECT_URL = "poll_list"
 LOGOUT_REDIRECT_URL = "poll_list"
+
+# Social Auth / OIDC Configuration
+SOCIAL_AUTH_JSONFIELD_ENABLED = True
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = "your-google-client-id"
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = "your-google-client-secret"
+SOCIAL_AUTH_GITHUB_KEY = "your-github-client-id"
+SOCIAL_AUTH_GITHUB_SECRET = "your-github-client-secret"
+
+# OIDC Settings
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
+    "openid",
+    "email",
+    "profile",
+]
+
+SOCIAL_AUTH_GITHUB_SCOPE = [
+    "read:user",
+    "user:email",
+]
+
+# Custom pipeline for user creation and linking
+SOCIAL_AUTH_PIPELINE = (
+    "social_core.pipeline.social_auth.social_details",
+    "social_core.pipeline.social_auth.social_uid",
+    "social_core.pipeline.social_auth.auth_allowed",
+    "social_core.pipeline.social_auth.social_user",
+    "social_core.pipeline.user.get_username",
+    "social_core.pipeline.user.create_user",
+    "apps.accounts.pipeline.save_federated_identity",
+    "social_core.pipeline.social_auth.associate_user",
+    "social_core.pipeline.social_auth.load_extra_data",
+    "social_core.pipeline.user.user_details",
+)
 
 # Federated Identity and Trust Management
 # https://docs.djangoproject.com/en/6.0/topics/auth/customizing/
