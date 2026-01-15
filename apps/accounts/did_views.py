@@ -9,7 +9,6 @@ import json
 import logging
 import re
 
-import didkit
 from django.conf import settings
 from django.contrib.auth import login
 from django.shortcuts import redirect, render
@@ -74,7 +73,6 @@ class DIDLoginView(View):
     def post(self, request):
         """Process DID login with Verifiable Credential."""
         vc_json = request.POST.get("vc", "").strip()
-        vc_proof = request.POST.get("vc_proof", "").strip()
         next_url = request.POST.get("next", request.GET.get("next", "/"))
 
         logger.debug(f"DID login attempt for VC: {vc_json[:100]}...")

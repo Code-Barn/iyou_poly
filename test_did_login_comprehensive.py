@@ -6,17 +6,13 @@ This test covers the new DID login views and trust management system.
 import json
 import logging
 import os
-import sys
 from unittest.mock import patch
-
-import django
-from django.conf import settings
-from django.test import TestCase, override_settings
-from django.urls import reverse
 
 # Configure Django settings
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-django.setup()
+
+from django.test import TestCase, override_settings
+from django.urls import reverse
 
 from apps.accounts.models import User
 from apps.accounts.utils.did_utils import (

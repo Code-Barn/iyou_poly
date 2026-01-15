@@ -9,9 +9,8 @@ import json
 import logging
 
 import didkit
-from django.contrib.auth import get_user_model
 
-from apps.accounts.utils.did_utils import generate_did, issue_vc
+from apps.accounts.utils.did_utils import issue_vc
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -111,8 +110,8 @@ def test_complete_vc_workflow():
     logger.info("\nSummary:")
     logger.info(f"- Successfully issued VC with {len(expected_fields)} extra fields")
     logger.info(f"- All fields preserved: {', '.join(expected_fields)}")
-    logger.info(f"- VC structure is valid and complete")
-    logger.info(f"- Proof is properly included and signed")
+    logger.info("- VC structure is valid and complete")
+    logger.info("- Proof is properly included and signed")
 
     return True
 

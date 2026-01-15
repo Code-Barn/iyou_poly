@@ -257,7 +257,7 @@ class FederatedDataSignalsTest(TestCase):
 
     def test_sync_new_data(self):
         """Test that new federated data is synchronized to other nodes."""
-        federated_data = FederatedData.objects.create(
+        FederatedData.objects.create(
             node=self.source_node,
             data_type="poll",
             data_id="poll123",

@@ -91,7 +91,7 @@ def test_copy_functionality_simulation():
 
     # Test 2: Verify the text is valid JSON
     try:
-        parsed = json.loads(simulated_pre_content)
+        json.loads(simulated_pre_content)
         logger.info("✓ Extracted text is valid JSON")
     except json.JSONDecodeError as e:
         logger.error(f"✗ Extracted text is not valid JSON: {e}")

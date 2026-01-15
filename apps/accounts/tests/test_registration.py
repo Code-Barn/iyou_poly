@@ -42,7 +42,6 @@ def test_user_registration_and_did_generation():
 
 def test_did_based_login():
     """Test that a user can log in using their DID and VC."""
-    import json
 
     from django.contrib.auth import get_user_model
 
@@ -86,8 +85,7 @@ def test_did_based_login():
         # Navigate to the DID login page
         page.goto("http://localhost:8000/login/did/")
 
-        # Use the test user's DID and VC for login
-        did = user.did
+        # Use the test user's VC for login
         vc = json.dumps(vc_data)
 
         # Fill out the DID login form
@@ -109,7 +107,6 @@ def test_did_based_login():
 
 def test_voting_flow():
     """Test that a user can create a poll and vote on it."""
-    import json
 
     from django.contrib.auth import get_user_model
 
@@ -156,9 +153,8 @@ def test_voting_flow():
         # Navigate to the DID login page
         page.goto("http://localhost:8000/login/did/")
 
-        # Use the test user's DID and VC for login
+        # Use the test user's VC for login
         vc_data = user.get_authentication_vc()
-        did = user.did
         vc = json.dumps(vc_data)
 
         # Extract the VC proof from the user's VC
@@ -185,7 +181,7 @@ def test_voting_flow():
         expect(page.locator("text=Your vote has been recorded.")).to_be_visible()
 
         # Verify that the vote is attributed to the selected option
-        expect(page.locator(f"text=Option 1: 1 vote")).to_be_visible()
+        expect(page.locator("text=Option 1: 1 vote")).to_be_visible()
 
         # Close the browser
         browser.close()

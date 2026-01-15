@@ -9,13 +9,12 @@ import json
 import logging
 
 import didkit
-from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login
 from django.shortcuts import redirect, render
 from django.views import View
 
 from apps.accounts.forms import UserCreationForm
-from apps.accounts.utils.did_utils import generate_did, issue_vc, verify_vc
+from apps.accounts.utils.did_utils import generate_did, issue_vc
 
 User = get_user_model()
 
@@ -155,7 +154,7 @@ class VCManagementView(View):
         for vc in request.user.vcs:
             # Check if this VC is NOT an authentication credential
             vc_types = vc.get("type", [])
-            if not ("AuthenticationCredential" in vc_types):
+            if "AuthenticationCredential" not in vc_types:
                 other_vcs.append(vc)
 
         return render(
@@ -175,7 +174,6 @@ class GenerateDIDAndVCView(View):
 
     def get(self, request):
         """Generate a DID and VC for the current user."""
-        import logging
 
         logger = logging.getLogger(__name__)
         logger.debug("GenerateDIDAndVCView called")
@@ -192,7 +190,7 @@ class GenerateDIDAndVCView(View):
         # Skip if the user already has a DID
         if user.did and user.did_key:
             logger.debug(f"User {user.username} already has a DID: {user.did}")
-            logger.debug(f"Using existing did_key for VC generation")
+            logger.debug("Using existing did_key for VC generation")
 
         # Generate a DID for the user if they don't have one
         if not user.did:

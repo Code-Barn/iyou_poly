@@ -1,5 +1,3 @@
-from django.contrib.auth import get_user_model
-
 from apps.accounts.models import FederatedIdentity
 
 
@@ -16,8 +14,6 @@ def save_federated_identity(backend, user, response, *args, **kwargs):
         response: The response from the OIDC provider
         *args, **kwargs: Additional pipeline arguments
     """
-    User = get_user_model()
-
     # Extract provider name from backend
     provider = backend.name
 

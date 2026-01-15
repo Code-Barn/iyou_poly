@@ -4,8 +4,6 @@ Test script to verify the VC using the didkit Python library directly.
 """
 
 import json
-import os
-import sys
 
 import didkit
 

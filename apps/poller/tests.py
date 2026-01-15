@@ -375,11 +375,12 @@ class PollerAPIViewsTest(TestCase):
         self.client.force_login(self.user)
         data = {"option_id": self.option1.id}
         response = self.client.post(
-            reverse("vote_api", args=[self.poll.id]),
-            data=json.dumps(data),
-            content_type="application/json",
+            reverse("vote_api", args=[self.poll.id]), data=data, HTTP_HX_REQUEST="true"
         )
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(Vote.objects.count(), 1)
+        self.assertEqual(Vote.objects.first().option, self.option1)
+        self.assertEqual(PollOption.objects.get(id=self.option1.id).votes, 1)
         self.assertEqual(response.json()["status"], "success")
         self.assertEqual(response.json()["data"]["option_id"], self.option1.id)
 
@@ -387,9 +388,7 @@ class PollerAPIViewsTest(TestCase):
         """Test that an unauthenticated user cannot cast a vote."""
         data = {"option_id": self.option1.id}
         response = self.client.post(
-            reverse("vote_api", args=[self.poll.id]),
-            data=json.dumps(data),
-            content_type="application/json",
+            reverse("vote_api", args=[self.poll.id]), data=data, HTTP_HX_REQUEST="true"
         )
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["status"], "error")

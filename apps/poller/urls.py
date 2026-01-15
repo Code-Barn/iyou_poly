@@ -14,7 +14,6 @@ from apps.poller.views import (
     poll_detail_api,
     poll_list,
     vote_api,
-    vote_detail_api,
 )
 
 urlpatterns = [
@@ -29,16 +28,11 @@ urlpatterns = [
         poll_detail_api,
         name="poll_detail_api",
     ),
-    # Vote API
+    # Vote API - Primary voting endpoint
     path(
-        "api/polls/<int:poll_id>/votes/",
+        "api/polls/<int:poll_id>/vote/",
         vote_api,
         name="vote_api",
-    ),
-    path(
-        "api/polls/<int:poll_id>/votes/detail/",
-        vote_detail_api,
-        name="vote_detail_api",
     ),
     # Template Views
     path(

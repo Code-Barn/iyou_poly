@@ -1,0 +1,97 @@
+<div id="vote-form-{{ poll.id }}">
+    {# Debug user_vote #}
+    <script>
+        console.log("user_vote in template:", {% if user_vote %}{
+            id: {{ user_vote.id }},
+            option: {
+                id: {{ user_vote.option.id }},
+                text: "{{ user_vote.option.text }}"
+            },
+            user: "{{ user_vote.user.username }}"
+        }{% else %}null{% endif %});
+    </script>
+
+    {% if user_vote %}
+        <div class="bg-green-50 border-l-4 border-green-400 p-4 mb-6" role="alert" aria-label="Your vote confirmation">
+            <p class="text-green-700">
+                You voted for <strong>{{ user_vote.option.text }}</strong>.
+            </p>
+        </div>
+    {% endif %}
+
+    <div class="space-y-3" role="radiogroup" aria-labelledby="vote-form-heading-{{ poll.id }}">
+        {% for option in poll.options.all %}
+            <div class="flex items-center justify-between w-full" role="radio" aria-checked="{% if user_vote and user_vote.option.id == option.id %}true{% else %}false{% endif %}">
+                <div class="flex items-center">
+                    <input
+                        type="radio"
+                        name="option"
+                        id="option-{{ option.id }}"
+                        value="{{ option.id }}"
+                        class="h-4 w-4 text-[color:var(--primary-color)] border-gray-300 rounded focus:ring-[color:var(--primary-focus)]"
+                        {% if user_vote and user_vote.option.id == option.id %}checked{% endif %}
+                        {% if user_vote %}disabled{% endif %}
+                        aria-label="Vote for {{ option.text }}"
+                    >
+                    <label
+                        for="option-{{ option.id }}"
+                        class="ml-3 block text-gray-700 {% if user_vote and user_vote.option.id == option.id %}font-semibold{% endif %}"
+                    >
+                        {{ option.text }}
+                    </label>
+                </div>
+                {% if not user_vote %}
+                    <form
+                        hx-post="{% url 'vote_api' poll.id %}"
+                        hx-target="#vote-form-{{ poll.id }}"
+                        hx-swap="innerHTML"
+                        class="inline"
+                    >
+                        <input type="hidden" name="option_id" value="{{ option.id }}">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                        <button
+                            type="submit"
+                            class="bg-[color:var(--primary-color)] text-white px-4 py-2 rounded-md hover:bg-[color:var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[color:var(--primary-focus)]"
+                            aria-label="Submit vote for {{ option.text }}"
+                        >
+                            Vote
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div id="vote-results-{{ poll.id }}" class="mt-6" role="region" aria-labelledby="vote-results-heading-{{ poll.id }}">
+    <h3 id="vote-results-heading-{{ poll.id }}" class="sr-only">Vote results for {{ poll.title }}</h3>
+    {% with total_votes=poll.votes.count %}
+    <div class="bg-gray-50 rounded-lg p-4">
+        <h3 class="text-lg font-medium text-gray-900 mb-3">Results</h3>
+        {% if total_votes > 0 %}
+            <div class="space-y-2">
+                {% for option in poll.options.all %}
+                    {% with vote_count=option.vote_options.count %}
+                        <div class="flex items-center">
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div
+                                    class="bg-blue-600 h-2.5 rounded-full"
+                                    style="width: {% if total_votes > 0 %}{% widthratio vote_count total_votes 100 %}%{% else %}0{% endif %}"
+                                ></div>
+                            </div>
+                            <span class="ml-3 text-sm text-gray-600">
+                                {{ option.text }} • {{ vote_count }} vote{{ vote_count|pluralize }}
+                            </span>
+                        </div>
+                    {% endwith %}
+                {% endfor %}
+            </div>
+            <p class="text-sm text-gray-500 mt-2">
+                Total votes: {{ total_votes }}
+            </p>
+        {% else %}
+            <p class="text-gray-500">No votes yet.</p>
+        {% endif %}
+    </div>
+    {% endwith %}
+</div>

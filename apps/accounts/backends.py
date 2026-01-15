@@ -5,10 +5,9 @@ Custom authentication backends for the accounts app.
 import json
 
 import didkit
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
-
-from apps.accounts.utils.did_utils import verify_vc
 
 
 class DIDAuthBackend(ModelBackend):
@@ -22,7 +21,6 @@ class DIDAuthBackend(ModelBackend):
 
         did = kwargs.get("did")
         vc = kwargs.get("vc")
-        vc_proof = kwargs.get("vc_proof")
 
         """
         Authenticate a user using their DID and Verifiable Credential (VC).
@@ -163,7 +161,6 @@ class OIDCAuthBackend:
         )
         first_name = social.extra_data.get("first_name", "")
         last_name = social.extra_data.get("last_name", "")
-        full_name = social.extra_data.get("name") or f"{first_name} {last_name}".strip()
 
         # Create the user
         user = User.objects.create_user(
@@ -171,6 +168,8 @@ class OIDCAuthBackend:
         )
 
         # Generate a DID for the user to enable federated identity
+        from apps.accounts.utils.did_utils import generate_did
+
         user.did = generate_did(method="key")
         user.did_method = "key"
         key = json.loads(didkit.generateEd25519Key())
@@ -184,6 +183,8 @@ class OIDCAuthBackend:
             "issuanceDate": "2023-01-01T00:00:00Z",
             "credentialSubject": {"id": user.did, "name": username, "email": email},
         }
+        from apps.accounts.utils.did_utils import issue_vc
+
         vc = issue_vc(credential, user.did, user.did_key)
         if vc:
             user.add_vc(json.loads(vc))

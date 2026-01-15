@@ -5,7 +5,6 @@ This module defines forms for user registration, authentication, and profile man
 in the Polly project. It includes forms for DID-based and federated authentication.
 """
 
-from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm as BaseUserCreationForm
 
