@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "debug_toolbar",
+    "rest_framework",
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.poller.apps.PollerConfig",

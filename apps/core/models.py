@@ -292,3 +292,279 @@ class DataSyncLog(models.Model):
 
     def __str__(self):
         return f"Sync {self.status}: {self.data_type}:{self.data_id} from {self.source_node} to {self.target_node}"
+
+
+class ScopeType(models.Model):
+    """
+    Registry of available scope types. Allows dynamic addition of new scope types
+    without code changes. This is the backbone of the flexible scope system.
+    """
+
+    name = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text=_(
+            "The scope type identifier (e.g., 'geographic', 'organization', 'company', 'family')."
+        ),
+    )
+    display_name = models.CharField(
+        max_length=100,
+        help_text=_(
+            "Human-readable name (e.g., 'Geographic', 'Organization', 'Company')."
+        ),
+    )
+    description = models.TextField(
+        blank=True,
+        help_text=_("Description of this scope type and its intended use."),
+    )
+
+    parent_type = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="child_types",
+        help_text=_(
+            "The scope type that authorizes this one. Null for root/self-authorizing types."
+        ),
+    )
+    hierarchy_depth = models.PositiveIntegerField(
+        default=1,
+        help_text=_("Maximum depth of hierarchy for this type (1 = no sub-scopes)."),
+    )
+
+    is_self_authorizing = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Whether issuers can self-authorize (no parent required). True for organizations, families."
+        ),
+    )
+    requires_proof = models.BooleanField(
+        default=True,
+        help_text=_("Whether holders must provide proof of scope membership."),
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Scope Type")
+        verbose_name_plural = _("Scope Types")
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.display_name})"
+
+
+class Scope(models.Model):
+    """
+    A specific scope instance within a scope type.
+    Example: scope_type='geographic', value='DeKalb County, IN'
+    """
+
+    scope_type = models.ForeignKey(
+        ScopeType,
+        on_delete=models.PROTECT,
+        related_name="scopes",
+        help_text=_("The type of this scope."),
+    )
+    value = models.CharField(
+        max_length=255,
+        help_text=_(
+            "The specific scope value (e.g., 'DeKalb County, IN', 'Acme Corp')."
+        ),
+    )
+
+    parent_scope = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="child_scopes",
+        help_text=_(
+            "Parent scope in hierarchy (e.g., DeKalb County's parent is Indiana)."
+        ),
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Scope")
+        verbose_name_plural = _("Scopes")
+        unique_together = ("scope_type", "value")
+        ordering = ["scope_type", "value"]
+
+    def __str__(self):
+        return f"{self.scope_type.name}:{self.value}"
+
+
+class CredentialType(models.Model):
+    """
+    Defines credential types and their issuance rules.
+    """
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text=_(
+            "Unique name for this credential type (e.g., 'voting_authorization')."
+        ),
+    )
+    display_name = models.CharField(
+        max_length=150,
+        help_text=_("Human-readable name (e.g., 'Voting Authorization')."),
+    )
+    description = models.TextField(blank=True)
+
+    scope_type = models.ForeignKey(
+        ScopeType,
+        on_delete=models.PROTECT,
+        related_name="credential_types",
+        help_text=_("The scope type this credential is valid for."),
+    )
+
+    parent_credential_type = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="child_credential_types",
+        help_text=_(
+            "Credential type required to issue this credential (e.g., StateAuthorization issues CountyAuthorization)."
+        ),
+    )
+
+    max_issuers_per_scope = models.PositiveIntegerField(
+        default=5,
+        help_text=_("Maximum number of issuers allowed per scope."),
+    )
+    requires_approval = models.BooleanField(
+        default=True,
+        help_text=_("Whether issuance requires multi-signer approval."),
+    )
+    min_approvals = models.PositiveIntegerField(
+        default=1,
+        help_text=_("Minimum approvals required for issuance."),
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Credential Type")
+        verbose_name_plural = _("Credential Types")
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} (scope: {self.scope_type.name})"
+
+
+class CredentialIssuance(models.Model):
+    """
+    Records all credential issuances for audit and sync.
+    """
+
+    credential = models.JSONField(
+        help_text=_("The full Verifiable Credential as a JSON object."),
+    )
+    holder_did = models.CharField(
+        max_length=255,
+        help_text=_("The DID of the credential holder."),
+    )
+    issuer_did = models.CharField(
+        max_length=255,
+        help_text=_("The DID of the credential issuer."),
+    )
+    credential_type = models.ForeignKey(
+        CredentialType,
+        on_delete=models.PROTECT,
+        related_name="issuances",
+        help_text=_("The type of credential issued."),
+    )
+    scope = models.ForeignKey(
+        Scope,
+        on_delete=models.PROTECT,
+        related_name="credential_issuances",
+        help_text=_("The scope this credential is valid for."),
+    )
+
+    ipfs_cid = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("IPFS Content Identifier where credential is stored."),
+    )
+    blockchain_tx = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Blockchain transaction hash where credential hash is anchored."),
+    )
+
+    STATUS_CHOICES = [
+        ("active", _("Active")),
+        ("revoked", _("Revoked")),
+        ("expired", _("Expired")),
+    ]
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="active",
+        help_text=_("Current status of the credential."),
+    )
+
+    issued_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Credential Issuance")
+        verbose_name_plural = _("Credential Issuances")
+        unique_together = ("holder_did", "credential_type", "scope")
+        ordering = ["-issued_at"]
+
+    def __str__(self):
+        return f"{self.credential_type.name} issued to {self.holder_did}"
+
+
+class IssuerAuthorization(models.Model):
+    """
+    Tracks which issuers are authorized to issue credentials for a scope.
+    """
+
+    issuer_did = models.CharField(
+        max_length=255,
+        help_text=_("The DID of the authorized issuer."),
+    )
+    credential_type = models.ForeignKey(
+        CredentialType,
+        on_delete=models.PROTECT,
+        related_name="authorizations",
+        help_text=_("The credential type this issuer is authorized to issue."),
+    )
+    scope = models.ForeignKey(
+        Scope,
+        on_delete=models.PROTECT,
+        related_name="issuer_authorizations",
+        help_text=_("The scope this issuer is authorized to issue for."),
+    )
+
+    authorized_by = models.CharField(
+        max_length=255,
+        help_text=_("The DID that authorized this issuer."),
+    )
+    authorization_credential = models.JSONField(
+        blank=True,
+        help_text=_("The credential proving authorization."),
+    )
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Issuer Authorization")
+        verbose_name_plural = _("Issuer Authorizations")
+        unique_together = ("issuer_did", "credential_type", "scope")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.issuer_did} authorized for {self.credential_type.name} in {self.scope}"

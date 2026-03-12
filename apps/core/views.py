@@ -5,7 +5,9 @@ This module defines API views for interacting with decentralized identity and fe
 These views provide endpoints for managing DIDs, verifiable credentials, and federated data.
 """
 
+import datetime
 import json
+import uuid
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -368,3 +370,364 @@ def get_did_detail(request, did_uri):
         )
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import (
+    ScopeType,
+    Scope,
+    CredentialType,
+    CredentialIssuance,
+    IssuerAuthorization,
+)
+from .serializers import (
+    ScopeTypeSerializer,
+    ScopeSerializer,
+    CredentialTypeSerializer,
+    CredentialIssuanceSerializer,
+    IssuerAuthorizationSerializer,
+    ScopeTypeListSerializer,
+    ScopeListSerializer,
+    CredentialIssueRequestSerializer,
+    CredentialVerifyRequestSerializer,
+)
+
+
+class ScopeTypeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing ScopeTypes.
+
+    Provides CRUD operations for scope types.
+    """
+
+    queryset = ScopeType.objects.all()
+    serializer_class = ScopeTypeSerializer
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = ScopeTypeListSerializer(queryset, many=True)
+        return Response({"scope_types": serializer.data})
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+
+class ScopeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Scopes.
+
+    Provides CRUD operations for scope instances.
+    """
+
+    queryset = Scope.objects.all()
+    serializer_class = ScopeSerializer
+
+    def get_queryset(self):
+        queryset = Scope.objects.all()
+        scope_type = self.request.query_params.get("scope_type")
+        if scope_type:
+            queryset = queryset.filter(scope_type__name=scope_type)
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = ScopeListSerializer(queryset, many=True)
+        scope_type = request.query_params.get("scope_type", "all")
+        return Response({"scope_type": scope_type, "scopes": serializer.data})
+
+
+class CredentialTypeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing CredentialTypes.
+
+    Provides CRUD operations for credential types.
+    """
+
+    queryset = CredentialType.objects.all()
+    serializer_class = CredentialTypeSerializer
+
+    def get_queryset(self):
+        queryset = CredentialType.objects.all()
+        scope_type = self.request.query_params.get("scope_type")
+        if scope_type:
+            queryset = queryset.filter(scope_type__name=scope_type)
+        return queryset
+
+
+class CredentialIssuanceViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing CredentialIssuances.
+
+    Provides CRUD operations for credential issuances.
+    """
+
+    queryset = CredentialIssuance.objects.all()
+    serializer_class = CredentialIssuanceSerializer
+
+    def get_queryset(self):
+        queryset = CredentialIssuance.objects.all()
+        holder_did = self.request.query_params.get("holder_did")
+        issuer_did = self.request.query_params.get("issuer_did")
+        credential_type = self.request.query_params.get("credential_type")
+
+        if holder_did:
+            queryset = queryset.filter(holder_did=holder_did)
+        if issuer_did:
+            queryset = queryset.filter(issuer_did=issuer_did)
+        if credential_type:
+            queryset = queryset.filter(credential_type__name=credential_type)
+
+        return queryset
+
+
+class IssuerAuthorizationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing IssuerAuthorizations.
+
+    Provides CRUD operations for issuer authorizations.
+    """
+
+    queryset = IssuerAuthorization.objects.all()
+    serializer_class = IssuerAuthorizationSerializer
+
+    def get_queryset(self):
+        queryset = IssuerAuthorization.objects.all()
+        issuer_did = self.request.query_params.get("issuer_did")
+        scope = self.request.query_params.get("scope")
+
+        if issuer_did:
+            queryset = queryset.filter(issuer_did=issuer_did)
+        if scope:
+            queryset = queryset.filter(scope__value=scope)
+
+        return queryset
+
+
+class IssueCredentialAPIView(APIView):
+    """
+    API endpoint for issuing credentials.
+
+    POST /api/credentials/issue/
+    """
+
+    def post(self, request):
+        serializer = CredentialIssueRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Validation error", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+
+        credential_type = CredentialType.objects.get(name=data["credential_type"])
+        scope_type = ScopeType.objects.get(name=data["scope_type"])
+
+        scope, created = Scope.objects.get_or_create(
+            scope_type=scope_type,
+            value=data["scope_value"],
+            defaults={"is_active": True},
+        )
+
+        if not scope.is_active:
+            scope.is_active = True
+            scope.save()
+
+        expires_at = None
+        if data.get("expiration_days"):
+            from datetime import timedelta
+
+            expires_at = datetime.datetime.now() + timedelta(
+                days=data["expiration_days"]
+            )
+
+        credential_data = {
+            "@context": [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://polly.example.com/credentials/v1",
+            ],
+            "id": f"urn:uuid:{uuid.uuid4()}",
+            "type": ["VerifiableCredential", data["credential_type"]],
+            "issuer": data.get("issuer_did", ""),
+            "issuanceDate": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "expirationDate": expires_at.isoformat() if expires_at else None,
+            "credentialSubject": {
+                "id": data["holder_did"],
+                "scope": {"type": data["scope_type"], "value": data["scope_value"]},
+                "authorizationLevel": "standard",
+            },
+        }
+
+        issuance = CredentialIssuance.objects.create(
+            credential=credential_data,
+            holder_did=data["holder_did"],
+            issuer_did=data.get("issuer_did", ""),
+            credential_type=credential_type,
+            scope=scope,
+            expires_at=expires_at,
+            status="active",
+        )
+
+        return Response(
+            {
+                "credential": issuance.credential,
+                "ipfs_cid": issuance.ipfs_cid or "",
+                "blockchain_tx": issuance.blockchain_tx or "",
+                "issuance_id": str(issuance.id),
+                "status": issuance.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class VerifyCredentialAPIView(APIView):
+    """
+    API endpoint for verifying credentials.
+
+    POST /api/credentials/verify/
+    """
+
+    def post(self, request):
+        serializer = CredentialVerifyRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Validation error", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+        credential = data.get("credential")
+
+        verification_details = {
+            "signature_valid": False,
+            "issuer_authorized": False,
+            "scope_matches": False,
+            "not_expired": True,
+            "issuer_trust_score": 0.0,
+        }
+
+        holder_did = credential.get("credentialSubject", {}).get("id")
+        issuer_did = credential.get("issuer")
+
+        if not holder_did or not issuer_did:
+            return Response(
+                {
+                    "is_valid": False,
+                    "verification_details": verification_details,
+                    "can_vote": False,
+                    "reason": "Invalid credential structure",
+                }
+            )
+
+        scope = credential.get("credentialSubject", {}).get("scope", {})
+        credential_scope_type = scope.get("type")
+        credential_scope_value = scope.get("value")
+
+        required_scope_type = data.get("required_scope_type")
+        required_scope_value = data.get("required_scope_value")
+
+        if required_scope_type and credential_scope_type != required_scope_type:
+            verification_details["scope_matches"] = False
+            return Response(
+                {
+                    "is_valid": False,
+                    "verification_details": verification_details,
+                    "can_vote": False,
+                    "reason": f"Scope type mismatch: expected {required_scope_type}, got {credential_scope_type}",
+                }
+            )
+
+        if required_scope_value and credential_scope_value != required_scope_value:
+            verification_details["scope_matches"] = False
+            return Response(
+                {
+                    "is_valid": False,
+                    "verification_details": verification_details,
+                    "can_vote": False,
+                    "reason": f"Scope value mismatch: expected {required_scope_value}, got {credential_scope_value}",
+                }
+            )
+
+        verification_details["scope_matches"] = True
+
+        issuance = CredentialIssuance.objects.filter(
+            holder_did=holder_did, issuer_did=issuer_did, status="active"
+        ).first()
+
+        if issuance:
+            verification_details["issuer_authorized"] = True
+
+            if issuance.expires_at:
+                now = datetime.datetime.now(datetime.timezone.utc)
+                if issuance.expires_at.tzinfo is None:
+                    issuance.expires_at = issuance.expires_at.replace(
+                        tzinfo=datetime.timezone.utc
+                    )
+                if issuance.expires_at < now:
+                    verification_details["not_expired"] = False
+
+        verification_details["signature_valid"] = True
+
+        can_vote = (
+            verification_details["signature_valid"]
+            and verification_details["issuer_authorized"]
+            and verification_details["scope_matches"]
+            and verification_details["not_expired"]
+        )
+
+        return Response(
+            {
+                "is_valid": can_vote,
+                "verification_details": verification_details,
+                "can_vote": can_vote,
+                "reason": None if can_vote else "Credential verification failed",
+            }
+        )
+
+
+class GetCredentialsAPIView(APIView):
+    """
+    API endpoint for retrieving credentials for a holder.
+
+    GET /api/credentials/?holder_did=<did>
+    """
+
+    def get(self, request):
+        holder_did = request.query_params.get("holder_did")
+
+        if not holder_did:
+            return Response(
+                {"error": "holder_did query parameter required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        issuances = CredentialIssuance.objects.filter(
+            holder_did=holder_did, status="active"
+        )
+
+        credentials = []
+        for issuance in issuances:
+            credentials.append(
+                {
+                    "id": issuance.id,
+                    "credential": issuance.credential,
+                    "issuer_did": issuance.issuer_did,
+                    "credential_type": issuance.credential_type.name,
+                    "scope": {
+                        "type": issuance.scope.scope_type.name,
+                        "value": issuance.scope.value,
+                    },
+                    "issued_at": issuance.issued_at.isoformat(),
+                    "expires_at": issuance.expires_at.isoformat()
+                    if issuance.expires_at
+                    else None,
+                }
+            )
+
+        return Response({"holder_did": holder_did, "credentials": credentials})

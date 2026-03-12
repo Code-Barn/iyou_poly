@@ -340,27 +340,151 @@ def verify_vc(
 
         # Use DIDKit's verifyCredential function for verification
         logger.debug("Using DIDKit's verifyCredential for verification")
-        try:
-            result = didkit.verifyCredential(
-                vc_without_extra_fields, json.dumps(options)
-            )
-            verification_result = json.loads(result)
-            logger.debug(f"DIDKit verification result: {verification_result}")
+        result = didkit.verifyCredential(vc_without_extra_fields, json.dumps(options))
+        verification_result = json.loads(result)
+        logger.debug(f"DIDKit verification result: {verification_result}")
 
-            if verification_result.get("errors"):
-                logger.error(
-                    f"DIDKit verification errors: {verification_result['errors']}"
-                )
-                return False
-            else:
-                logger.debug("DIDKit verification succeeded")
-                return True
-        except Exception as e:
-            logger.error(f"DIDKit verification failed: {e}", exc_info=True)
+        if verification_result.get("errors"):
+            logger.error(f"DIDKit verification errors: {verification_result['errors']}")
             return False
+        else:
+            logger.debug("DIDKit verification succeeded")
+            return True
     except Exception as e:
         logger.error(f"Failed to verify VC: {e}", exc_info=True)
         return False
+
+
+def generate_ethr_did() -> tuple[str, str]:
+    """
+    Generate a new did:ethr DID using a random Ethereum private key.
+
+    Returns:
+        A tuple of (did, private_key_jwk).
+    """
+    try:
+        from eth_account import Account
+    except ImportError:
+        raise ImportError(
+            "web3 library required for did:ethr. Install with: pip install web3"
+        )
+
+    account = Account.create()
+    address = account.address
+    private_key = account.key.hex()
+
+    private_key_jwk = {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "d": private_key[2:] if private_key.startswith("0x") else private_key,
+        "x": "",  # Will be computed by didkit
+        "y": "",  # Will be computed by didkit
+    }
+
+    did = f"did:ethr:{address}"
+    return did, json.dumps(private_key_jwk)
+
+
+def resolve_ethr_did(did_str: str, eth_rpc_url: Optional[str] = None) -> Optional[Dict]:
+    """
+    Resolve a did:ethr DID to its DID Document.
+
+    Args:
+        did_str: The did:ethr DID to resolve (e.g., "did:ethr:0x...").
+        eth_rpc_url: Optional Ethereum JSON-RPC URL. If not provided,
+                     will attempt to use public endpoints.
+
+    Returns:
+        The resolved DID Document as a dictionary, or None if resolution fails.
+    """
+    try:
+        from web3 import Web3
+    except ImportError:
+        raise ImportError(
+            "web3 library required for did:ethr. Install with: pip install web3"
+        )
+
+    if not did_str.startswith("did:ethr:"):
+        return None
+
+    address = did_str.replace("did:ethr:", "")
+
+    if not address:
+        return None
+
+    w3 = Web3(Web3.HTTPProvider(eth_rpc_url)) if eth_rpc_url else None
+
+    did_document = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/secp256k1-2019/v1",
+        ],
+        "id": did_str,
+        "verificationMethod": [
+            {
+                "id": f"{did_str}#owner",
+                "type": "EcdsaSecp256k1VerificationKey2019",
+                "controller": did_str,
+                "publicKeyHex": "",  # Requires on-chain lookup
+            }
+        ],
+        "authentication": [f"{did_str}#owner"],
+        "assertionMethod": [f"{did_str}#owner"],
+        "service": [],
+    }
+
+    if w3 and w3.is_connected():
+        try:
+            owner = w3.eth.account.from_key(address).address
+            if owner:
+                did_document["verificationMethod"][0]["publicKeyHex"] = owner
+        except Exception as e:
+            logger.debug(f"Could not fetch owner from chain: {e}")
+
+    return did_document
+
+
+def get_did_method_from_did(did_str: str) -> Optional[str]:
+    """
+    Extract the DID method from a DID string.
+
+    Args:
+        did_str: The DID string (e.g., "did:ethr:0x...").
+
+    Returns:
+        The DID method (e.g., "ethr", "key"), or None if invalid.
+    """
+    try:
+        if did_str.startswith("did:"):
+            parts = did_str.split(":")
+            if len(parts) >= 2:
+                return parts[1]
+    except Exception:
+        pass
+    return None
+
+
+def generate_did_with_method(method: str = "key") -> tuple[str, str]:
+    """
+    Generate a new DID using the specified method.
+
+    Args:
+        method: The DID method to use ("key", "ethr", "web", "ion").
+
+    Returns:
+        A tuple of (did, private_key_jwk).
+
+    Raises:
+        ValueError: If the DID method is unsupported.
+    """
+    if method == "key":
+        key = didkit.generateEd25519Key()
+        did = didkit.keyToDID("key", key)
+        return did, key
+    elif method == "ethr":
+        return generate_ethr_did()
+    else:
+        raise ValueError(f"Unsupported DID method for generation: {method}")
 
 
 def get_trusted_issuers() -> set:
