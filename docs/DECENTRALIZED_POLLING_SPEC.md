@@ -4,6 +4,39 @@
 
 Polly is a decentralized, immutable polling application that enables distributed consensus determination through cryptographically-verified voting. The system uses Decentralized Identifiers (DIDs) for identity, Verifiable Credentials (VCs) for authorization, and IPFS + blockchain anchoring for data integrity.
 
+## Design Principles: Flexible Scope System
+
+### Core Philosophy
+
+Polly is designed to support **consensus determination within any group**, not just geographic communities. The scope system is **fully extensible** — administrators can define new scope types as needed.
+
+### Scope Architecture
+
+| Concept | Description |
+|---------|-------------|
+| **Scope Type** | Category of scope (e.g., `geographic`, `organization`, `company`, `family`) |
+| **Scope Value** | Specific instance (e.g., `county:DeKalb County`, `company:Acme Corp`) |
+| **Scope Type Hierarchy** | Which scope types authorize which (e.g., `state` authorizes `county`) |
+| **Issuer Authorization** | Required credentials to become an issuer within a scope |
+
+### Scope Categories
+
+| Category | Examples | Authorization Model |
+|----------|----------|-------------------|
+| **Geographic** | town, county, state, nation, global | Hierarchical (parent authorizes child) |
+| **Organization** | company, department, team | Often self-authorizing |
+| **Personal** | family | Self-authorizing (family head) |
+| **Social** | club, church, class | Often self-authorizing |
+| **Custom** | Any string | Configurable |
+
+### Why Flexible Scopes?
+
+1. **Primary use case**: Geographic consensus (town → county → state → nation → global)
+2. **Extensibility**: Add any scope type without code changes
+3. **Organization support**: Companies, clubs, families can all use Polly
+4. **Self-governance**: Organizations can self-authorize without external approval
+5. **Gradual trust building**: New users need credentials from existing group members
+
 ---
 
 ## 1. Data Models
@@ -23,9 +56,8 @@ Polly is a decentralized, immutable polling application that enables distributed
   "credentialSubject": {
     "id": "did:ethr:0x5678... (holder DID)",
     "scope": {
-      "type": "GeographicalScope",
-      "name": "county",
-      "value": "DeKalb County, IN"
+      "type": "geographic",           // Flexible: geographic, organization, custom
+      "value": "county:DeKalb County, IN"  // Format: "type:value"
     },
     "authorizationLevel": "standard",
     "issuedBy": "did:ethr:0x1234...",
@@ -38,50 +70,276 @@ Polly is a decentralized, immutable polling application that enables distributed
 }
 ```
 
-### 1.2 Issuer Hierarchy Model
+> **Note**: The `scope.type` field is fully extensible. Users can define any scope type they need:
+> - `geographic` — town, county, state, nation, global
+> - `organization` — company, club, team, family
+> - Any custom string — `class`, `church`, `neighborhood`, etc.
+
+### 1.2 Scope Types and Issuer Hierarchy
+
+The system supports **any scope type** as a string. Scope types are organized into two categories:
+
+#### Scope Type Categories
+
+| Category | Scope Types | Description |
+|----------|-------------|-------------|
+| **Geographic** | `town`, `county`, `state`, `nation`, `global` | Geographic/political boundaries |
+| **Organization** | `company`, `family`, `club`, `team`, `church`, `class` | Group/organizational boundaries |
+| **Custom** | Any string | User-defined scope types |
+
+#### Scope Value Format
+
+All scopes use the format: `scope_type:scope_value`
+
+Examples:
+- `county:DeKalb County, IN`
+- `state:Indiana`
+- `company:Acme Corporation`
+- `family:Smith Family`
+- `club:Knitting Circle`
+
+#### Issuer Authorization Hierarchies
+
+The system maintains separate authorization hierarchies **per scope type**:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    ROOT TRUST LAYER                         │
-│  (Optional: Foundation/Organization DID)                   │
-│  - Establishes governance framework                        │
-│  - Can authorize top-tier issuers                          │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ (issues Authorizations)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   TIER 1: STATE ISSUERS                      │
-│  - Authorized to issue county-level credentials            │
-│  - Must hold StateAuthorization credential                 │
-│  - Governance: State-level organizations/authorities       │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ (issues VotingCredentials)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  TIER 2: COUNTY ISSUERS                      │
-│  - Authorized to issue township/municipal credentials     │
-│  - Must hold CountyAuthorization credential                │
-│  - Maximum: N issuers per county (configurable)            │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ (issues VotingCredentials)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  TIER 3: TOWNSHIP ISSUERS                   │
-│  - Issue credentials to residents within their scope       │
-│  - Must hold TownshipAuthorization credential               │
-│  - In-person verification recommended                      │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ (holds)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    HOLDERS / VOTERS                         │
-│  - End users with DID + voting credentials                 │
-│  - Can participate in polls within their scope            │
-│  - Can request credentials from authorized issuers         │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                    GEOGRAPHIC SCOPE HIERARCHY                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                    ROOT TRUST LAYER (Optional)                 │  │
+│  │  - Foundation/Organization DID                                │  │
+│  │  - Establishes governance framework                          │  │
+│  │  - Can authorize national issuers                             │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            │ (issues national authorization)       │
+│                            ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                   TIER: NATION                                │  │
+│  │  - Authorized to issue state-level credentials               │  │
+│  │  - Must hold NationAuthorization credential                  │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            │ (issues state authorization)           │
+│                            ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                    TIER: STATE                                 │  │
+│  │  - Authorized to issue county-level credentials              │  │
+│  │  - Must hold StateAuthorization credential                    │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            │ (issues county authorization)         │
+│                            ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                   TIER: COUNTY                                │  │
+│  │  - Authorized to issue township/municipal credentials        │  │
+│  │  - Must hold CountyAuthorization credential                   │  │
+│  │  - Maximum: N issuers per county (configurable)              │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            │ (issues township authorization)       │
+│                            ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                  TIER: TOWNSHIP/MUNICIPAL                     │  │
+│  │  - Issue credentials to residents within their scope          │  │
+│  │  - Must hold TownshipAuthorization credential                  │  │
+│  │  - In-person verification recommended                         │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            │ (issues voting credentials)          │
+│                            ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                    HOLDERS / VOTERS                             │  │
+│  │  - End users with DID + voting credentials                    │  │
+│  │  - Can participate in polls within their scope                │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                  ORGANIZATION SCOPE HIERARCHY                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Organizations have flexible hierarchies. Common patterns:        │
+│                                                                      │
+│  Pattern A: Self-Authorized (Simple)                               │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    COMPANY / ORGANIZATION                     │  │
+│  │  - Self-authorizes (no parent required)                      │  │
+│  │  - HR/Admin issues credentials to employees/members          │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            │ (issues membership credentials)        │
+│                            ▼                                        │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                    HOLDERS / VOTERS                             │  │
+│  │  - Employees, members with valid credentials                  │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  Pattern B: Multi-Level Organization                               │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    HEADQUARTERS                               │  │
+│  │  - Issues authorization to divisions                         │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    DIVISION / REGION                           │  │
+│  │  - Issues authorization to departments                       │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    DEPARTMENT / TEAM                          │  │
+│  │  - Issues credentials to members                             │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    HOLDERS / VOTERS                           │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  Pattern C: Family / Small Group                                   │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    FAMILY HEAD / PRIMARY MEMBER               │  │
+│  │  - Issues credentials to family members                      │  │
+│  │  - Self-authorizes (no parent required)                      │  │
+│  └─────────────────────────┬─────────────────────────────────────┘  │
+│                            ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    FAMILY MEMBERS                             │  │
+│  │  - Hold credentials, participate in family polls             │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+#### Scope Type Registration
+
+New scope types can be registered dynamically:
+
+| Scope Type | Parent Required | Default Hierarchy Depth | Example |
+|------------|----------------|------------------------|---------|
+| `geographic` | Yes (hierarchy) | 5 (global→nation→state→county→town) | `county:DeKalb` |
+| `organization` | No (self-auth allowed) | 1 | `company:Acme` |
+| `custom` | Configurable | Configurable | Any string |
 
 ### 1.3 Django Models
+
+#### Scope Type Registry
+
+```python
+class ScopeType(models.Model):
+    """
+    Registry of available scope types. Allows dynamic addition of new scope types
+    without code changes. This is the backbone of the flexible scope system.
+    """
+    name = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text="The scope type identifier (e.g., 'geographic', 'organization', 'company', 'family')"
+    )
+    display_name = models.CharField(
+        max_length=100,
+        help_text="Human-readable name (e.g., 'Geographic', 'Organization', 'Company')"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of this scope type and its intended use"
+    )
+    
+    # Hierarchy configuration
+    parent_type = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='child_types',
+        help_text="The scope type that authorizes this one. Null for root/self-authorizing types."
+    )
+    hierarchy_depth = models.PositiveIntegerField(
+        default=1,
+        help_text="Maximum depth of hierarchy for this type (1 = no sub-scopes)"
+    )
+    
+    # Behavior flags
+    is_self_authorizing = models.BooleanField(
+        default=False,
+        help_text="Whether issuers can self-authorize (no parent required). True for organizations, families."
+    )
+    requires_proof = models.BooleanField(
+        default=True,
+        help_text="Whether holders must provide proof of scope membership (e.g., proof of residence)"
+    )
+    
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.name} ({self.display_name})"
+
+
+class Scope(models.Model):
+    """
+    A specific scope instance within a scope type.
+    Example: scope_type='geographic', value='DeKalb County, IN'
+    """
+    scope_type = models.ForeignKey(
+        ScopeType,
+        on_delete=models.PROTECT,
+        related_name='scopes'
+    )
+    value = models.CharField(
+        max_length=255,
+        help_text="The specific scope value (e.g., 'DeKalb County, IN', 'Acme Corp')"
+    )
+    
+    # For geographic scopes: lat/lng bounds
+    # For organizations: may have parent org
+    parent_scope = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='child_scopes',
+        help_text="Parent scope in hierarchy (e.g., DeKalb County's parent is Indiana)"
+    )
+    
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('scope_type', 'value')
+    
+    def __str__(self):
+        return f"{self.scope_type.name}:{self.value}"
+```
+
+#### Default Scope Types (Pre-populated)
+
+```python
+# Run on initial migration to set up default scope types
+DEFAULT_SCOPE_TYPES = [
+    # Geographic hierarchy
+    {'name': 'global', 'display_name': 'Global', 'parent_type': None, 
+     'hierarchy_depth': 5, 'is_self_authorizing': False},
+    {'name': 'nation', 'display_name': 'Nation', 'parent_type': 'global',
+     'hierarchy_depth': 4, 'is_self_authorizing': False},
+    {'name': 'state', 'display_name': 'State/Province', 'parent_type': 'nation',
+     'hierarchy_depth': 3, 'is_self_authorizing': False},
+    {'name': 'county', 'display_name': 'County', 'parent_type': 'state',
+     'hierarchy_depth': 2, 'is_self_authorizing': False},
+    {'name': 'town', 'display_name': 'Town/Municipality', 'parent_type': 'county',
+     'hierarchy_depth': 1, 'is_self_authorizing': False},
+    
+    # Organization types (self-authorizing)
+    {'name': 'organization', 'display_name': 'Organization', 'parent_type': None,
+     'hierarchy_depth': 3, 'is_self_authorizing': True},
+    {'name': 'company', 'display_name': 'Company', 'parent_type': 'organization',
+     'hierarchy_depth': 2, 'is_self_authorizing': True},
+    {'name': 'department', 'display_name': 'Department', 'parent_type': 'company',
+     'hierarchy_depth': 1, 'is_self_authorizing': True},
+    
+    # Personal/Social
+    {'name': 'family', 'display_name': 'Family', 'parent_type': None,
+     'hierarchy_depth': 1, 'is_self_authorizing': True},
+    {'name': 'club', 'display_name': 'Club/Group', 'parent_type': None,
+     'hierarchy_depth': 1, 'is_self_authorizing': True},
+]
+```
 
 #### Credential Definition
 
@@ -92,15 +350,25 @@ class CredentialType(models.Model):
     """
     name = models.CharField(max_length=100)
     description = models.TextField()
+    
+    # Scope type is fully extensible - any string is valid
+    # Common examples: 'geographic', 'organization', 'company', 'family', 'club'
+    # For geographic: 'global', 'nation', 'state', 'county', 'town', 'municipal'
     scope_type = models.CharField(
         max_length=50,
-        choices=[
-            ('state', 'State'),
-            ('county', 'County'),
-            ('township', 'Township'),
-            ('municipal', 'Municipal'),
-            ('global', 'Global'),
-        ]
+        help_text="Type of scope (e.g., 'geographic', 'organization', 'company', 'family'). "
+                  "Any string is valid - this field is fully extensible."
+    )
+    
+    # Hierarchy configuration - defines what parent scope_type (if any) authorizes this one
+    # For 'geographic': parent is 'state' -> 'county' -> 'town'
+    # For 'organization': parent may be None (self-authorizing) or another organization
+    parent_scope_type = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="The scope_type that authorizes this one (e.g., 'state' authorizes 'county'). "
+                  "Null for self-authorizing scopes (e.g., companies, families)."
     )
     required_authorization = models.ForeignKey(
         'self',
@@ -244,6 +512,107 @@ class Vote(models.Model):
 
 ## 2. API Contracts
 
+### 2.0 Scope Type & Scope Registry API
+
+#### GET /api/scopes/types
+
+Get all registered scope types.
+
+**Response (200):**
+```json
+{
+  "scope_types": [
+    {
+      "name": "geographic",
+      "display_name": "Geographic",
+      "description": "Geographic/political boundaries",
+      "parent_type": null,
+      "hierarchy_depth": 5,
+      "is_self_authorizing": false,
+      "child_types": ["nation", "state"]
+    },
+    {
+      "name": "organization", 
+      "display_name": "Organization",
+      "description": "Companies, teams, clubs",
+      "parent_type": null,
+      "hierarchy_depth": 3,
+      "is_self_authorizing": true,
+      "child_types": ["company", "department"]
+    },
+    {
+      "name": "family",
+      "display_name": "Family",
+      "description": "Family units",
+      "parent_type": null,
+      "hierarchy_depth": 1,
+      "is_self_authorizing": true,
+      "child_types": []
+    }
+  ]
+}
+```
+
+#### POST /api/scopes/types
+
+Register a new scope type. Requires appropriate permissions.
+
+**Request:**
+```json
+{
+  "name": "church",
+  "display_name": "Church/Religious Organization",
+  "description": "Religious congregations and organizations",
+  "parent_type": "organization",
+  "hierarchy_depth": 2,
+  "is_self_authorizing": true,
+  "requires_proof": true
+}
+```
+
+**Response (201):**
+```json
+{
+  "scope_type": {
+    "name": "church",
+    "display_name": "Church/Religious Organization",
+    ...
+  }
+}
+```
+
+#### GET /api/scopes/
+
+Get all scopes for a given type.
+
+**Query Params:**
+- `type` (required): The scope type name
+
+**Response (200):**
+```json
+{
+  "scope_type": "geographic",
+  "scopes": [
+    {"value": "DeKalb County, IN", "parent": null, "child_count": 3},
+    {"value": "Allen County, IN", "parent": null, "child_count": 2},
+    {"value": "Auburn, IN", "parent": "DeKalb County, IN", "child_count": 0}
+  ]
+}
+```
+
+#### POST /api/scopes/
+
+Register a new scope instance.
+
+**Request:**
+```json
+{
+  "scope_type": "company",
+  "value": "Acme Corporation",
+  "parent_scope": null
+}
+```
+
 ### 2.1 Credential Issuance API
 
 #### POST /api/credentials/issue
@@ -327,15 +696,13 @@ class Vote(models.Model):
 {
   "title": "Should we pave Main Street?",
   "description": "Vote on whether to allocate budget for Main Street paving project",
-  "geographical_scope": "township",
   "options": [
     "Yes, pave Main Street",
     "No, do not pave Main Street",
     "Abstain"
   ],
   "required_credentials": {
-    "types": ["voting_authorization"],
-    "scope_type": "township",
+    "scope_type": "town",
     "scope_value": "Auburn, IN",
     "require_multiple_issuers": false,
     "min_issuer_trust": 0.0
@@ -344,6 +711,17 @@ class Vote(models.Model):
   "creator_signature": "0xsignature..."
 }
 ```
+
+> **Note**: The `scope_type` and `scope_value` fields are fully flexible. 
+> Example polls with different scope types:
+> 
+> | Poll Type | scope_type | scope_value |
+> |-----------|------------|-------------|
+> | Town decision | `town` | `Auburn, IN` |
+> | County decision | `county` | `DeKalb County, IN` |
+> | Company poll | `company` | `Acme Corporation` |
+> | Family poll | `family` | `Smith Family` |
+> | Club poll | `club` | `Knitting Circle` |
 
 **Response (201):**
 ```json
