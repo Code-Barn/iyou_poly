@@ -14,20 +14,18 @@ import signal
 import subprocess
 import sys
 import time
-from urllib.parse import urljoin
 
 import django
-import requests
+from django.contrib.auth import get_user_model
 from django.test import Client
 from django.urls import reverse
+
+from apps.poller.models import GeographicalScope, Poll, PollOption, Vote
 
 # Set up Django environment
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from django.contrib.auth import get_user_model
-
-from apps.poller.models import GeographicalScope, Poll, PollOption, Vote
 
 User = get_user_model()
 

@@ -93,9 +93,9 @@ class DIDLoginTrustManagementTest(TestCase):
 
     def test_verify_federated_vc_invalid_json(self):
         """Test VC verification with invalid JSON."""
-        invalid_json = "not valid json"
+        invalid_json = '{"type": "InvalidVC"}'
 
-        # Should fail with invalid JSON
+        # Should fail with invalid VC (missing @context)
         self.assertFalse(verify_federated_vc(invalid_json))
 
     @override_settings(REQUIRE_TRUSTED_ISSUERS=True, TRUSTED_ISSUERS=["did:key:other"])

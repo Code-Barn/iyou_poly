@@ -12,14 +12,11 @@ from typing import Any, Dict
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from apps.poller.models import Poll, PollOption, Vote
 

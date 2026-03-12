@@ -1,5 +1,5 @@
+{% load vc_filters %}
 <div id="vc-container">
-    {% load vc_filters %}
     {% if auth_vc %}
         <div class="mb-8">
             <h3 class="text-lg font-semibold text-gray-900 mb-2">Authentication Credential</h3>
@@ -18,58 +18,165 @@
     {% endif %}
 
     <div>
-        <h3 class="text-lg font-semibold text-gray-900 mb-2">All Credentials</h3>
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="text-lg font-semibold text-gray-900">Other Credentials</h3>
+            <div class="space-x-2">
+                <button hx-get="{% url 'generate_credential' %}" hx-target="#generate-credential-modal" hx-swap="innerHTML" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Generate Credential
+                </button>
+                <button hx-get="{% url 'import_credential' %}" class="px-3 py-1 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    Import Credential
+                </button>
+            </div>
+        </div>
+        <p class="text-sm text-gray-600 mb-4">Other credentials represent group memberships, roles, certifications, or attributes. These can be added, removed, and shared as needed.</p>
+
         {% if vcs %}
             <div class="space-y-4">
-                {% for vc in vcs %}
+                {% for vc_data in vcs %}
+                    {% with vc=vc_data.credential counter=forloop.counter %}
                     <div class="bg-gray-50 rounded-lg relative">
-                        <div class="p-4 pb-0">
-                            <h4 class="font-medium text-gray-900">
-                                {% if vc.type and "AuthenticationCredential" in vc.type %}
-                                    Authentication Credential
-                                {% else %}
-                                    User Credential {{ forloop.counter }}
-                                {% endif %}
-                            </h4>
+                        <div class="p-4 pb-0 border-b border-gray-200">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-medium text-gray-900" data-vc-id="{{ vc.credentialSubject.id }}">
+                                        {{ vc_data.name }}
+                                    </h4>
+                                    <input
+                                        type="text"
+                                        id="edit-name-{{ vc.credentialSubject.id }}"
+                                        data-vc-id="{{ vc.credentialSubject.id }}"
+                                        class="hidden w-full text-sm border border-gray-300 rounded-md px-2 py-1"
+                                        value="{{ vc_data.name }}"
+                                    />
+                                    <p class="text-sm text-gray-500">
+                                        Added: {{ vc_data.added_date|date:"M d, Y H:i" }}
+                                    </p>
+                                </div>
+                                <button class="text-sm text-gray-500 hover:text-gray-700 focus:outline-none" onclick="toggleEditName('{{ vc.credentialSubject.id }}', '{{ vc_data.name }}')">
+                                    ✏️ Rename
+                                </button>
+                            </div>
                         </div>
                         <div class="p-4 pt-0 overflow-x-auto">
-                            <pre class="text-sm text-gray-700" id="vc-json-{{ forloop.counter }}">{{ vc|to_json_compact|escape }}</pre>
+                            <pre class="text-sm text-gray-700" id="vc-json-{{ counter }}">{{ vc|to_json_compact|escape }}</pre>
                         </div>
                         <div class="absolute top-2 right-2 flex space-x-2">
-                            <button onclick="copyToClipboard('vc-json-{{ forloop.counter }}', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                            <button onclick="copyToClipboard('vc-json-{{ counter }}', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                                 Copy
                             </button>
-                            <a href="data:application/json;charset=utf-8,{{ vc|urlencode }}" download="vc_{{ forloop.counter }}.json" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            <a href="data:application/json;charset=utf-8,{{ vc|to_json_compact|urlencode }}" download="{{ vc_data.name|slugify }}.json" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                                 Download
                             </a>
                         </div>
                     </div>
+                    {% endwith %}
                 {% endfor %}
             </div>
-            <script>
-                function copyToClipboard(elementId, event) {
-                    const element = document.getElementById(elementId);
-                    const text = element.textContent || element.innerText;
-                    navigator.clipboard.writeText(text).then(() => {
-                        // Show a nice notification
-                        const button = event.target;
-                        const originalText = button.textContent;
-                        button.textContent = "Copied!";
-                        button.classList.remove("bg-gray-200", "hover:bg-gray-300");
-                        button.classList.add("bg-green-200");
-                        setTimeout(() => {
-                            button.textContent = originalText;
-                            button.classList.remove("bg-green-200");
-                            button.classList.add("bg-gray-200", "hover:bg-gray-300");
-                        }, 2000);
-                    }).catch(err => {
-                        console.error("Failed to copy: ", err);
-                        alert("Failed to copy to clipboard. Please try again.");
-                    });
-                }
-            </script>
         {% else %}
-            <p class="text-gray-500">No verifiable credentials found.</p>
+            <div class="text-center py-8 bg-gray-50 rounded-lg">
+                <p class="text-gray-600 mb-4">No other credentials yet.</p>
+                <p class="text-sm text-gray-500 mb-4">Add credentials to represent group memberships, professional certifications, or other attributes.</p>
+                <div class="space-x-2">
+                    <button hx-get="{% url 'generate_credential' %}" hx-target="#generate-credential-modal" hx-swap="innerHTML" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Generate Credential
+                    </button>
+                    <button hx-get="{% url 'import_credential' %}" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                        Import Credential
+                    </button>
+                </div>
+            </div>
         {% endif %}
     </div>
 </div>
+
+<script>
+    function copyToClipboard(elementId, event) {
+        const element = document.getElementById(elementId);
+        const text = element.textContent || element.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            // Show a nice notification
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = "Copied!";
+            button.classList.remove("bg-gray-200", "hover:bg-gray-300");
+            button.classList.add("bg-green-200");
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove("bg-green-200");
+                button.classList.add("bg-gray-200", "hover:bg-gray-300");
+            }, 2000);
+        }).catch(err => {
+            console.error("Failed to copy: ", err);
+            alert("Failed to copy to clipboard. Please try again.");
+        });
+    }
+
+    function toggleEditName(vcId, currentName) {
+        const nameElements = document.querySelectorAll(`[data-vc-id="${vcId}"]`);
+        const editButton = event.target;
+
+        // Check if we're already in edit mode
+        if (editButton.textContent.includes('✓')) {
+            // Save the new name
+            const input = document.querySelector(`#edit-name-${vcId}`);
+            const newName = input.value.trim();
+
+            if (newName && newName !== currentName) {
+                // Send AJAX request to update the name
+                fetch("{% url 'update_vc_name' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name=csrf-token]').getAttribute('content')
+                    },
+                    body: JSON.stringify({
+                        vc_id: vcId,
+                        name: newName
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update all name displays
+                        nameElements.forEach(el => {
+                            if (el.tagName === 'H4') {
+                                el.textContent = newName;
+                            }
+                        });
+                    } else {
+                        alert(data.error || 'Failed to update name');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while updating the name');
+                });
+            }
+
+            // Switch back to display mode
+            nameElements.forEach(el => {
+                if (el.tagName === 'H4') {
+                    el.style.display = 'block';
+                } else if (el.id === `edit-name-${vcId}`) {
+                    el.style.display = 'none';
+                }
+            });
+
+            editButton.textContent = '✏️ Rename';
+        } else {
+            // Switch to edit mode
+            nameElements.forEach(el => {
+                if (el.tagName === 'H4') {
+                    el.style.display = 'none';
+                } else if (el.id === `edit-name-${vcId}`) {
+                    el.value = currentName;
+                    el.style.display = 'block';
+                    el.focus();
+                }
+            });
+
+            editButton.textContent = '✓ Save';
+        }
+    }
+</script>

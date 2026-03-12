@@ -9,17 +9,17 @@ This script tests the voting functionality by:
 """
 
 import os
-import sys
 
 import django
 from django.contrib.auth import get_user_model
 from django.test import Client
 
+from apps.poller.models import GeographicalScope, Poll, PollOption, Vote
+
 # Set up Django environment
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from apps.poller.models import GeographicalScope, Poll, PollOption, Vote
 
 User = get_user_model()
 

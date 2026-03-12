@@ -7,7 +7,13 @@ Polly is a decentralized/federated identity provider and federated database fron
 - **OpenID Connect (OIDC) Support**: Integrate with external identity providers like Google, GitHub, and more for seamless authentication.
 
 - **Decentralized Identity (DID) Support**: Manage DIDs, DID methods, and DID documents.
-- **Verifiable Credentials (VCs)**: Store, verify, and revoke verifiable credentials.
+- **Verifiable Credentials (VCs)**: Store, verify, manage, and share verifiable credentials with advanced features:
+  - Custom naming for credentials
+  - Tracking of when credentials were added
+  - In-place renaming of credentials
+  - Generation of new credentials with custom types
+  - Import of existing credentials
+  - Automatic migration of legacy credential formats
 - **Federated Identity Support**: Link multiple external identities to a single user.
 - **Custom Authentication**: Support for DID-based and federated authentication.
 - **Federated Database**: Synchronize data across multiple federated nodes with conflict resolution.
@@ -21,6 +27,11 @@ Polly is a decentralized/federated identity provider and federated database fron
   - Implemented core models for decentralized identity (DIDs, DID documents, verifiable credentials).
   - Implemented federated database models with synchronization and conflict resolution.
   - Added RESTful API endpoints for managing decentralized identity and federated data.
+  - Implemented advanced verifiable credential management with:
+    - Custom naming and metadata
+    - Credential generation and import
+    - In-place renaming functionality
+    - Format migration for legacy credentials
 - **Next Steps**:
   - Adopt W3C DID and VC standards.
   - Enhance DID resolution and utilities.
@@ -46,6 +57,34 @@ Polly is a decentralized/federated identity provider and federated database fron
 - Implement models and views for managing polls.
 - Add support for geographical layers (local, state, national, global).
 - Integrate polling functionality with the federated database.
+
+## Verifiable Credential Management
+
+Polly provides a comprehensive interface for managing verifiable credentials:
+
+### Key Features
+
+1. **Custom Naming**: Assign meaningful names to credentials for easy identification
+2. **Added Date Tracking**: See when each credential was added to your wallet
+3. **In-Place Renaming**: Rename credentials at any time without re-importing
+4. **Credential Generation**: Create new credentials with custom types and attributes
+5. **Credential Import**: Import existing credentials from JSON files
+6. **Format Migration**: Automatic conversion of legacy credential formats
+
+### Using the VC Management Interface
+
+1. **Access the VC Management Page**: Click "Credentials" in the navigation bar
+2. **Generate a New Credential**: Click "Generate Credential" and provide a name and type
+3. **Import a Credential**: Click "Import Credential" and paste the JSON data
+4. **Rename a Credential**: Click the "Rename" button next to any credential
+5. **Download a Credential**: Click "Download" to save a credential as a JSON file
+
+### Technical Implementation
+
+- Credentials are stored with metadata including name and added date
+- The system automatically migrates legacy credentials to the new format
+- All operations are performed through secure, authenticated endpoints
+- Credentials can be filtered by type (e.g., authentication vs. other credentials)
 
 ### Phase 4: Front-End Development
 - Design and implement a user-friendly front-end.

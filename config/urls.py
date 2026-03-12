@@ -20,9 +20,13 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from apps.accounts.views import (
+    DeleteCredentialView,
     DIDLoginView,
+    GenerateCredentialView,
     GenerateDIDAndVCView,
+    ImportCredentialView,
     RegisterView,
+    UpdateVCNameView,
     VCManagementView,
 )
 
@@ -52,6 +56,26 @@ urlpatterns = [
         "accounts/generate_did_and_vc/",
         GenerateDIDAndVCView.as_view(),
         name="generate_did_and_vc",
+    ),
+    path(
+        "accounts/generate_credential/",
+        GenerateCredentialView.as_view(),
+        name="generate_credential",
+    ),
+    path(
+        "accounts/import_credential/",
+        ImportCredentialView.as_view(),
+        name="import_credential",
+    ),
+    path(
+        "accounts/update_vc_name/",
+        UpdateVCNameView.as_view(),
+        name="update_vc_name",
+    ),
+    path(
+        "accounts/delete_credential/",
+        DeleteCredentialView.as_view(),
+        name="delete_credential",
     ),
     # Social auth URLs for OIDC
     path("social-auth/", include("social_django.urls", namespace="social")),

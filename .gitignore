@@ -1,14 +1,82 @@
-# Python-generated files
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+
+# Django
+*.sqlite3
+*.db
+*.log
+*.pot
+*.py[co]
+.env
+.env.local
+.env.*.local
+.DS_Store
+.venv/
+venv/
+env/
+ENV/
+.env/
+local_settings.py
+db.sqlite3
+staticfiles/
+media/
+
+# Python
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+*.egg
+MANIFEST
+.Python
+.python-version
 
-# Virtual environments
-.venv
-.venv/
-db.sqlite3
-__pycache__/
-*.pyc
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+test-results/
+
+# Logging
+*.log
+server.log
+
+# Temporary files
+*.bak
+*.tmp
+*.temp
+*.orig
+*.rej
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Dependency directories
+node_modules/
+bower_components/
+
+# UV (Python package manager)
+.uv/
+uv.lock
+
+# Test directories
+temp/

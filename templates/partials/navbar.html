@@ -22,10 +22,10 @@
                 <div class="flex items-center space-x-4">
                     {% if user.is_authenticated %}
                         <span class="text-sm text-gray-600 dark:text-gray-300">Logged in as {{ user.username }}</span>
-                        <a href="{% url 'vc_management' %}" class="text-sm text-[color:var(--primary-color)] hover:underline">Credentials</a>
-                        <form method="post" action="{% url 'logout' %}" class="inline">
+                        <a href="{% url 'vc_management' %}" class="text-sm text-[color:var(--primary-color)] hover:underline leading-none">Credentials</a>
+                        <a href="{% url 'logout' %}" class="text-sm text-[color:var(--primary-color)] hover:underline leading-none" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">Logout</a>
+                        <form id="logout-form" method="post" action="{% url 'logout' %}" class="hidden">
                             {% csrf_token %}
-                            <button type="submit" class="text-sm text-[color:var(--primary-color)] hover:underline">Logout</button>
                         </form>
                 {% else %}
                     <a href="{% url 'login' %}" class="text-sm text-[color:var(--primary-color)] hover:underline">Login</a>

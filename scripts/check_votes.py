@@ -4,11 +4,11 @@ import sys
 
 import django
 
+from apps.poller.models import Poll, Vote
+
 # Set up Django environment
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
-
-from apps.poller.models import Poll, Vote
 
 
 def check_votes(poll_id):

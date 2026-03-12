@@ -6,11 +6,14 @@ It uses DIDKit for DID/VC operations and supports multiple DID methods (e.g., di
 """
 
 import json
+import logging
 from typing import Dict, List, Optional, Union
 
 import didkit
 from django.conf import settings
 from pydid import DID
+
+logger = logging.getLogger(__name__)
 
 
 def generate_did(method: str = "key", key_type: str = "Ed25519") -> str:
@@ -268,7 +271,9 @@ def issue_vc(
 
 
 def verify_vc(
-    vc: str, proof_options: Optional[Dict] = None, did_key: Optional[Dict] = None
+    vc: Union[str, Dict],
+    proof_options: Optional[Dict] = None,
+    did_key: Optional[Dict] = None,
 ) -> bool:
     """
     Verify a Verifiable Credential (VC) using DIDKit's verifyCredential function.
@@ -277,7 +282,7 @@ def verify_vc(
     which handles JWS verification and DID resolution automatically.
 
     Args:
-        vc: The VC to verify (as a JSON string).
+        vc: The VC to verify (as a JSON string or Python dictionary).
         proof_options: Optional proof options (ignored if `did_key` is provided).
         did_key: Optional private key (JWK format as a dictionary) for manual verification.
                 Not used if DIDKit verification is successful.
@@ -293,9 +298,21 @@ def verify_vc(
     logger.debug(f"VC to verify: {vc}")
 
     try:
-        # Parse the VC to inspect it
-        vc_data = json.loads(vc)
+        # Handle both JSON strings and Python dictionaries
+        if isinstance(vc, str):
+            try:
+                vc_data = json.loads(vc)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON string provided to verify_vc: {vc}")
+                return False
+        else:
+            vc_data = vc
         logger.debug(f"VC to verify: {vc_data}")
+
+        # Validate that vc_data is a dictionary
+        if not isinstance(vc_data, dict):
+            logger.error(f"VC data is not a dictionary: {vc_data}")
+            return False
 
         # Store any extra fields from credentialSubject that might cause validation issues
         credential_subject = vc_data.get("credentialSubject", {})
@@ -395,7 +412,12 @@ def verify_federated_vc(
         True if the VC is valid and trusted, False otherwise.
     """
     # Step 1: Verify the cryptographic signature
-    if not verify_vc(vc_json, did_key=did_key):
+    try:
+        if not verify_vc(vc_json, did_key=did_key):
+            logger.debug("verify_vc returned False")
+            return False
+    except Exception as e:
+        logger.debug(f"verify_vc raised an exception: {e}")
         return False
 
     # Step 2: Extract issuer if not provided

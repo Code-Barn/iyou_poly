@@ -5,18 +5,25 @@ This module defines views for user authentication, registration, and profile man
 in the Polly project. It includes views for DID-based, OIDC, and federated authentication.
 """
 
+import datetime
 import json
 import logging
 
 import didkit
+from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 
 from apps.accounts.forms import UserCreationForm
 from apps.accounts.utils.did_utils import generate_did, issue_vc
 
 User = get_user_model()
+
+# Create logger instance
+logger = logging.getLogger(__name__)
 
 
 class DIDLoginView(View):
@@ -144,18 +151,13 @@ class VCManagementView(View):
     def get(self, request):
         """Render the VC management page."""
         if not request.user.is_authenticated:
-            return redirect("login")
+            return redirect(f"{reverse('login')}?next={request.path}")
 
         # Get the user's authentication VC
         auth_vc = request.user.get_authentication_vc()
 
         # Get other credentials (exclude authentication credential)
-        other_vcs = []
-        for vc in request.user.vcs:
-            # Check if this VC is NOT an authentication credential
-            vc_types = vc.get("type", [])
-            if "AuthenticationCredential" not in vc_types:
-                other_vcs.append(vc)
+        other_vcs = request.user.get_other_vcs()
 
         return render(
             request,
@@ -238,16 +240,161 @@ class GenerateDIDAndVCView(View):
         )
 
 
-class OIDCCallbackView(View):
+class GenerateCredentialView(View):
     """
-    View to handle OIDC callback and complete authentication.
-
-    This view is called after successful OIDC authentication to
-    complete the login process.
+    View to generate a new verifiable credential for the current user.
     """
 
     def get(self, request):
-        """Handle OIDC callback and complete authentication."""
+        """Show the generate credential form."""
+        if not request.user.is_authenticated:
+            return redirect("login")
+
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return render(request, "accounts/partials/generate_credential_form.html")
+        else:
+            return redirect("vc_management")
+
+    def post(self, request):
+        """Generate a new verifiable credential for the current user with custom name and type."""
+        logger = logging.getLogger(__name__)
+
+        if not request.user.is_authenticated:
+            logger.debug("User not authenticated, redirecting to login")
+            return redirect("login")
+
+        user = request.user
+        credential_name = request.POST.get("credential_name", "").strip()
+        credential_type = request.POST.get(
+            "credential_type", "MembershipCredential"
+        ).strip()
+
+        # Ensure user has a DID
+        if not user.did:
+            logger.debug(f"User {user.username} doesn't have a DID, generating one")
+            user.did = generate_did(method="key")
+            user.did_method = "key"
+
+        # Ensure user has a did_key
+        if not user.did_key:
+            logger.debug(f"User {user.username} doesn't have a did_key, generating one")
+            key = json.loads(didkit.generateEd25519Key())
+            user.did_key = json.dumps(key)
+            user.save()
+        else:
+            key = json.loads(user.did_key)
+
+        # Generate a credential with custom type
+        credential = {
+            "@context": "https://www.w3.org/2018/credentials/v1",
+            "type": ["VerifiableCredential", credential_type],
+            "issuer": user.did,
+            "issuanceDate": datetime.datetime.now(datetime.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "credentialSubject": {
+                "id": user.did,
+                "name": user.username,
+                "description": credential_name
+                or f"{credential_type} for {user.username}",
+            },
+        }
+
+        # Issue the VC using the user's key
+        vc = issue_vc(credential, user.did, key)
+        if vc:
+            logger.debug(f"VC issued successfully: {vc}")
+            vc_data = json.loads(vc)
+            user.add_vc(vc_data, credential_name or credential_type)
+            messages.success(request, "Credential generated successfully!")
+        else:
+            logger.error("VC issuance failed")
+            messages.error(request, "Failed to generate credential.")
+
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return render(
+                request,
+                "accounts/partials/vc_container.html",
+                {
+                    "auth_vc": request.user.get_authentication_vc(),
+                    "vcs": request.user.get_other_vcs(),
+                },
+            )
+        else:
+            return redirect("vc_management")
+
+
+class ImportCredentialView(View):
+    """
+    View to import a verifiable credential for the current user.
+    """
+
+    def get(self, request):
+        """Show the import credential form."""
+        if not request.user.is_authenticated:
+            return redirect("login")
+
+        return render(request, "accounts/import_credential.html", {})
+
+    def post(self, request):
+        """Process the imported credential."""
+        logger = logging.getLogger(__name__)
+
+        if not request.user.is_authenticated:
+            logger.debug("User not authenticated, redirecting to login")
+            return redirect("login")
+
+        vc_json = request.POST.get("vc_json", "").strip()
+        vc_name = request.POST.get("vc_name", "").strip()
+
+        if not vc_json:
+            messages.error(request, "No credential data provided.")
+            return redirect("import_credential")
+
+        try:
+            # Parse the VC JSON
+            vc = json.loads(vc_json)
+
+            # Validate basic VC structure
+            if not isinstance(vc, dict):
+                raise ValueError("Credential must be a JSON object")
+
+            if "@context" not in vc:
+                raise ValueError("Credential must have an @context field")
+
+            if "type" not in vc or "VerifiableCredential" not in vc["type"]:
+                raise ValueError(
+                    "Credential must have a type field containing 'VerifiableCredential'"
+                )
+
+            if "credentialSubject" not in vc:
+                raise ValueError("Credential must have a credentialSubject field")
+
+            # Add the VC to the user's collection
+            user = request.user
+            # For imported credentials, use the provided name or generate a default
+            vc_types = vc.get("type", [])
+            name = vc_name if vc_name else "Imported Credential"
+            if not vc_name and len(vc_types) > 1:
+                name = vc_types[1]  # Use the second type as the name if available
+
+            user.add_vc(vc, name)
+
+            messages.success(request, "Credential imported successfully!")
+            return redirect("vc_management")
+
+        except json.JSONDecodeError:
+            messages.error(request, "Invalid JSON format.")
+        except ValueError as e:
+            messages.error(request, f"Invalid credential: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error importing credential: {str(e)}")
+            messages.error(request, "An error occurred while importing the credential.")
+
+        return redirect("import_credential")
+
         # The actual OIDC authentication is handled by social-auth-app-django
         # This view is for any additional processing needed after OIDC login
 
@@ -257,3 +404,141 @@ class OIDCCallbackView(View):
 
         # If not authenticated, redirect to login page
         return redirect("login")
+
+
+class DeleteCredentialView(View):
+    """
+    View to delete a verifiable credential.
+    """
+
+    def post(self, request):
+        """Delete a verifiable credential."""
+        if not request.user.is_authenticated:
+            return JsonResponse(
+                {"success": False, "error": "Authentication required"},
+                status=403,
+            )
+
+        try:
+            data = json.loads(request.body)
+            vc_id = data.get("vc_id")
+
+            if not vc_id:
+                return JsonResponse(
+                    {"success": False, "error": "VC ID is required"},
+                    status=400,
+                )
+
+            # Find and delete the VC
+            user = request.user
+            vcs = user.vcs.copy()
+            updated = False
+
+            for i, vc_data in enumerate(vcs):
+                vc = vc_data.get("credential", {})
+                if vc.get("credentialSubject", {}).get("id") == vc_id:
+                    # Remove the VC
+                    vcs.pop(i)
+                    updated = True
+                    break
+
+            if updated:
+                user.vcs = vcs
+                user.save()
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse(
+                    {"success": False, "error": "VC not found"},
+                    status=404,
+                )
+
+        except json.JSONDecodeError:
+            return JsonResponse(
+                {"success": False, "error": "Invalid JSON data"},
+                status=400,
+            )
+        except Exception as e:
+            logger.error(f"Error deleting credential: {str(e)}")
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "An error occurred while deleting the credential",
+                },
+                status=500,
+            )
+
+
+class UpdateVCNameView(View):
+    """
+    View to update the custom name of a verifiable credential.
+    """
+
+    def post(self, request):
+        """Update the name of a verifiable credential."""
+        logger = logging.getLogger(__name__)
+
+        if not request.user.is_authenticated:
+            return JsonResponse(
+                {"success": False, "error": "Authentication required"},
+                status=403,
+            )
+
+        try:
+            data = json.loads(request.body)
+            vc_id = data.get("vc_id")
+            new_name = data.get("name", "").strip()
+
+            if not vc_id:
+                return JsonResponse(
+                    {"success": False, "error": "VC ID is required"},
+                    status=400,
+                )
+
+            if not new_name:
+                return JsonResponse(
+                    {"success": False, "error": "Name cannot be empty"},
+                    status=400,
+                )
+
+            if len(new_name) > 100:
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "error": "Name is too long (max 100 characters)",
+                    },
+                    status=400,
+                )
+
+            # Find and update the VC
+            user = request.user
+            vcs = user.vcs.copy()
+            updated = False
+
+            for i, vc_data in enumerate(vcs):
+                vc = vc_data.get("credential", {})
+                if vc.get("credentialSubject", {}).get("id") == vc_id:
+                    vcs[i]["name"] = new_name
+                    updated = True
+                    break
+
+            if updated:
+                user.vcs = vcs
+                user.save()
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse(
+                    {"success": False, "error": "VC not found"},
+                    status=404,
+                )
+
+        except json.JSONDecodeError:
+            return JsonResponse(
+                {"success": False, "error": "Invalid JSON data"},
+                status=400,
+            )
+        except Exception as e:
+            logger.error(f"Error updating VC name: {str(e)}")
+            return JsonResponse(
+                {"success": False, "error": "An error occurred"},
+                status=500,
+            )

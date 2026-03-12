@@ -1,6 +1,8 @@
 <!-- polly/templates/partials/footer.html -->
+{% load static %}
 <footer class="bg-white shadow-inner mt-8">
-    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
         <p class="text-sm text-gray-500">&copy; {% now "Y" %} Polly. All rights reserved.</p>
+        <img src="{% static 'createdinDeKalb.png' %}" alt="Created in DeKalb" class="h-24">
     </div>
 </footer>
