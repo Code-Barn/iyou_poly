@@ -9,42 +9,9 @@ from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.models import FederatedData
+from apps.core.models import FederatedData, Scope, ScopeType, CredentialType
 
 User = get_user_model()
-
-
-class GeographicalScope(models.Model):
-    """
-    Model representing a geographical scope for polls.
-
-    This model defines the geographical reach of a poll (e.g., local, state, national, global).
-    """
-
-    name = models.CharField(
-        max_length=50,
-        unique=True,
-        help_text=_(
-            "Name of the geographical scope (e.g., 'local', 'state', 'national', 'global')."
-        ),
-    )
-    description = models.TextField(
-        blank=True,
-        help_text=_("Description of the geographical scope and its use cases."),
-    )
-    is_active = models.BooleanField(
-        default=True,
-        help_text=_("Whether this geographical scope is active and available for use."),
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = _("Geographical Scope")
-        verbose_name_plural = _("Geographical Scopes")
-
-    def __str__(self):
-        return self.name
 
 
 class Poll(models.Model):
@@ -52,6 +19,7 @@ class Poll(models.Model):
     Model representing a poll.
 
     A poll consists of a question and multiple options for users to vote on.
+    Supports scope-based voting requirements for decentralized authorization.
     """
 
     title = models.CharField(
@@ -68,14 +36,79 @@ class Poll(models.Model):
         related_name="polls_created",
         help_text=_("The user who created this poll."),
     )
-    geographical_scope = models.ForeignKey(
-        GeographicalScope,
+
+    # Scope-based voting requirements (replaces geographical_scope)
+    required_scope_type = models.ForeignKey(
+        ScopeType,
         on_delete=models.PROTECT,
-        help_text=_("The geographical scope of this poll."),
+        related_name="polls_requiring_scope",
+        help_text=_("The scope type required to vote in this poll."),
+        null=True,
+        blank=True,
     )
+    required_scope = models.ForeignKey(
+        Scope,
+        on_delete=models.PROTECT,
+        related_name="polls_requiring_scope",
+        help_text=_("The specific scope value required to vote."),
+        null=True,
+        blank=True,
+    )
+    required_credential_type = models.ForeignKey(
+        CredentialType,
+        on_delete=models.PROTECT,
+        related_name="polls_requiring_credential",
+        help_text=_("The credential type required to vote in this poll."),
+        null=True,
+        blank=True,
+    )
+
+    # Trust requirements
+    min_issuer_trust_score = models.FloatField(
+        default=0.0,
+        help_text=_("Minimum trust score for credential issuers (0.0 - 1.0)."),
+    )
+    require_multiple_issuers = models.BooleanField(
+        default=False,
+        help_text=_("Require credentials from multiple issuers."),
+    )
+
+    # Vote weight (always 1:1 for this app)
+    vote_weight = models.PositiveIntegerField(
+        default=1,
+        help_text=_("Vote weight per voter. Always 1 for equal voting."),
+    )
+
+    # Decentralized storage
+    ipfs_cid = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("IPFS Content Identifier for poll data."),
+    )
+    blockchain_anchor = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Blockchain transaction hash anchoring this poll."),
+    )
+    votes_merkle_root = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Merkle root of all votes for verification."),
+    )
+    vote_count_anchor = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Blockchain anchor for vote count."),
+    )
+
     is_active = models.BooleanField(
         default=True,
         help_text=_("Whether this poll is active and available for voting."),
+    )
+    ends_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the poll ends. Null for no end time."),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -86,6 +119,20 @@ class Poll(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def is_expired(self):
+        """Check if the poll has ended."""
+        from django.utils import timezone
+
+        if self.ends_at:
+            return timezone.now() > self.ends_at
+        return False
+
+    @property
+    def total_votes(self):
+        """Get total vote count."""
+        return sum(option.votes for option in self.options.all())
 
 
 class PollOption(models.Model):
@@ -125,7 +172,8 @@ class Vote(models.Model):
     """
     Model representing a vote cast by a user in a poll.
 
-    This model records which option a user voted for in a poll.
+    This model records which option a user voted for, with cryptographic
+    verification for decentralized trust.
     """
 
     poll = models.ForeignKey(
@@ -145,16 +193,71 @@ class Vote(models.Model):
         on_delete=models.PROTECT,
         related_name="votes_cast",
         help_text=_("The user who cast this vote."),
+        null=True,
+        blank=True,
     )
+
+    # DID-based voting (can vote without local user account)
+    voter_did = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("The DID of the voter."),
+    )
+
+    # Cryptographic verification
+    signature = models.TextField(
+        blank=True,
+        help_text=_("Cryptographic signature from voter's DID key."),
+    )
+    credential_cid = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("IPFS CID of voter's voting credential."),
+    )
+    credential_proof = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Zero-knowledge proof of credential possession."),
+    )
+
+    # Vote weight (always 1 for this app)
+    weight = models.PositiveIntegerField(
+        default=1,
+        help_text=_("Weight of this vote. Always 1 for equal voting."),
+    )
+
+    # Decentralized storage
+    ipfs_cid = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("IPFS Content Identifier for this vote."),
+    )
+    blockchain_tx = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Blockchain transaction hash for this vote."),
+    )
+
+    # Verification status
+    is_verified = models.BooleanField(
+        default=False,
+        help_text=_("Whether this vote has been cryptographically verified."),
+    )
+    verification_details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Details about vote verification."),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = _("Vote")
         verbose_name_plural = _("Votes")
-        unique_together = ("poll", "user")
+        unique_together = ("poll", "voter_did")
 
     def __str__(self):
-        return f"{self.user.username} voted for {self.option.text} in {self.poll.title}"
+        return f"{self.voter_did} voted for {self.option.text} in {self.poll.title}"
 
 
 class FederatedPoll(FederatedData):

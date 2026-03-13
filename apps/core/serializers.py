@@ -16,6 +16,13 @@ from .models import (
     DIDMethod,
     DID,
     DIDDocument,
+    FederatedNode,
+    FederatedData,
+    SyncMessage,
+    SyncMessageType,
+    DataSyncLog,
+    IssuerMetrics,
+    IssuerEndorsement,
 )
 
 
@@ -301,3 +308,279 @@ class ScopeListSerializer(serializers.ModelSerializer):
 
     def get_child_count(self, obj):
         return obj.child_scopes.count()
+
+
+class FederatedNodeSerializer(serializers.ModelSerializer):
+    """Serializer for FederatedNode model."""
+
+    class Meta:
+        model = FederatedNode
+        fields = [
+            "id",
+            "name",
+            "endpoint",
+            "public_key",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class FederatedDataSerializer(serializers.ModelSerializer):
+    """Serializer for FederatedData model."""
+
+    node_name = serializers.CharField(source="node.name", read_only=True)
+
+    class Meta:
+        model = FederatedData
+        fields = [
+            "id",
+            "node",
+            "node_name",
+            "data_type",
+            "data_id",
+            "data",
+            "version",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "version", "created_at", "updated_at"]
+
+    node = serializers.SlugRelatedField(
+        slug_field="name", queryset=FederatedNode.objects.all()
+    )
+
+
+class SyncMessageSerializer(serializers.ModelSerializer):
+    """Serializer for SyncMessage model."""
+
+    sender_node_name = serializers.CharField(source="sender_node.name", read_only=True)
+    message_type_display = serializers.CharField(
+        source="get_message_type_display", read_only=True
+    )
+
+    class Meta:
+        model = SyncMessage
+        fields = [
+            "id",
+            "message_id",
+            "message_type",
+            "message_type_display",
+            "sender_node",
+            "sender_node_name",
+            "sender_endpoint",
+            "timestamp",
+            "signature",
+            "payload",
+            "previous_hash",
+            "proof_of_work",
+            "is_processed",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "message_id",
+            "timestamp",
+            "proof_of_work",
+            "is_processed",
+            "created_at",
+        ]
+
+    sender_node = serializers.SlugRelatedField(
+        slug_field="name", queryset=FederatedNode.objects.all()
+    )
+
+
+class SyncMessageCreateSerializer(serializers.Serializer):
+    """Serializer for creating sync messages."""
+
+    message_type = serializers.ChoiceField(choices=SyncMessageType.choices)
+    sender_endpoint = serializers.URLField(required=False, allow_blank=True)
+    payload = serializers.JSONField()
+    previous_hash = serializers.CharField(required=False, allow_blank=True)
+    signature = serializers.CharField(required=False, allow_blank=True)
+
+
+class DataSyncLogSerializer(serializers.ModelSerializer):
+    """Serializer for DataSyncLog model."""
+
+    source_node_name = serializers.CharField(source="source_node.name", read_only=True)
+    target_node_name = serializers.CharField(source="target_node.name", read_only=True)
+
+    class Meta:
+        model = DataSyncLog
+        fields = [
+            "id",
+            "source_node",
+            "source_node_name",
+            "target_node",
+            "target_node_name",
+            "data_type",
+            "data_id",
+            "version",
+            "status",
+            "details",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+
+class SyncRequestSerializer(serializers.Serializer):
+    """Serializer for sync requests."""
+
+    since_version = serializers.IntegerField(default=0, required=False)
+    data_types = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+    )
+
+
+class AnnounceRequestSerializer(serializers.Serializer):
+    """Serializer for announce requests."""
+
+    message_type = serializers.ChoiceField(choices=SyncMessageType.choices)
+    payload = serializers.JSONField()
+    previous_hash = serializers.CharField(required=False, allow_blank=True)
+    signature = serializers.CharField(required=False, allow_blank=True)
+
+
+class IssuerMetricsSerializer(serializers.ModelSerializer):
+    """Serializer for IssuerMetrics model."""
+
+    scope_value = serializers.CharField(source="scope.value", read_only=True)
+    scope_type_name = serializers.CharField(
+        source="scope.scope_type.name", read_only=True
+    )
+    trust_score = serializers.SerializerMethodField()
+    trust_level = serializers.SerializerMethodField()
+
+    class Meta:
+        model = IssuerMetrics
+        fields = [
+            "id",
+            "issuer_did",
+            "scope",
+            "scope_value",
+            "scope_type_name",
+            "total_credentials_issued",
+            "unique_holders",
+            "credentials_this_month",
+            "credentials_revoked",
+            "verifications_attempted",
+            "verifications_successful",
+            "scope_violations",
+            "first_issuance",
+            "last_updated",
+            "revocation_rate",
+            "verification_success_rate",
+            "trust_score",
+            "trust_level",
+        ]
+        read_only_fields = ["id", "last_updated"]
+
+    scope = serializers.SlugRelatedField(
+        slug_field="value", queryset=Scope.objects.all()
+    )
+
+    def get_trust_score(self, obj):
+        from apps.core.utils import TrustScorer
+
+        return TrustScorer.calculate_score(obj)
+
+    def get_trust_level(self, obj):
+        from apps.core.utils import TrustScorer
+
+        score = TrustScorer.calculate_score(obj)
+        return TrustScorer.get_trust_level(score)
+
+
+class IssuerMetricsCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating IssuerMetrics."""
+
+    class Meta:
+        model = IssuerMetrics
+        fields = [
+            "issuer_did",
+            "scope",
+            "total_credentials_issued",
+            "unique_holders",
+            "credentials_this_month",
+            "credentials_revoked",
+            "verifications_attempted",
+            "verifications_successful",
+            "scope_violations",
+            "first_issuance",
+        ]
+
+    scope = serializers.SlugRelatedField(
+        slug_field="value", queryset=Scope.objects.all()
+    )
+
+
+class IssuerEndorsementSerializer(serializers.ModelSerializer):
+    """Serializer for IssuerEndorsement model."""
+
+    scope_value = serializers.CharField(source="scope.value", read_only=True)
+    scope_type_name = serializers.CharField(
+        source="scope.scope_type.name", read_only=True
+    )
+
+    class Meta:
+        model = IssuerEndorsement
+        fields = [
+            "id",
+            "endorser_did",
+            "endorsed_issuer_did",
+            "scope",
+            "scope_value",
+            "scope_type_name",
+            "is_positive",
+            "comment",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    scope = serializers.SlugRelatedField(
+        slug_field="value", queryset=Scope.objects.all()
+    )
+
+
+class IssuerEndorsementCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating IssuerEndorsement."""
+
+    class Meta:
+        model = IssuerEndorsement
+        fields = [
+            "endorsed_issuer_did",
+            "scope",
+            "is_positive",
+            "comment",
+        ]
+
+    scope = serializers.SlugRelatedField(
+        slug_field="value", queryset=Scope.objects.all()
+    )
+
+
+class TrustScoreRequestSerializer(serializers.Serializer):
+    """Serializer for trust score requests."""
+
+    issuer_did = serializers.CharField(max_length=255)
+    scope_value = serializers.CharField(max_length=255)
+    scope_type = serializers.CharField(max_length=50, required=False)
+
+
+class TrustScoreResponseSerializer(serializers.Serializer):
+    """Serializer for trust score responses."""
+
+    issuer_did = serializers.CharField()
+    scope = serializers.CharField()
+    trust_score = serializers.FloatField()
+    trust_level = serializers.CharField()
+    meets_threshold = serializers.BooleanField()
+    threshold = serializers.CharField()
+    metrics = IssuerMetricsSerializer()

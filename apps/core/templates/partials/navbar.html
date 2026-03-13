@@ -1,9 +1,10 @@
 <!-- polly/templates/partials/navbar.html -->
+{% load static %}
 <nav class="bg-white shadow-sm dark:bg-gray-800">
     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                <a href="{% url 'poll_list' %}">Polly</a>
+                <a href="{% url 'poll_list' %}"><img src="{% static 'polly_logo.png' %}" alt="Polly" class="h-24 w-auto"></a>
             </h1>
             <div class="flex items-center space-x-4">
                 <button

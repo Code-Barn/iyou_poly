@@ -731,3 +731,456 @@ class GetCredentialsAPIView(APIView):
             )
 
         return Response({"holder_did": holder_did, "credentials": credentials})
+
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.core.models import (
+    FederatedNode,
+    FederatedData,
+    SyncMessage,
+    DataSyncLog,
+)
+from apps.core.serializers import (
+    FederatedNodeSerializer,
+    FederatedDataSerializer,
+    SyncMessageSerializer,
+    SyncMessageCreateSerializer,
+    DataSyncLogSerializer,
+    SyncRequestSerializer,
+    AnnounceRequestSerializer,
+)
+
+
+class FederatedNodeViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing federated nodes."""
+
+    queryset = FederatedNode.objects.all()
+    serializer_class = FederatedNodeSerializer
+    lookup_field = "name"
+
+    def get_queryset(self):
+        queryset = FederatedNode.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == "true")
+        return queryset
+
+    @action(detail=True, methods=["post"])
+    def sync(self, request, name=None):
+        """Sync data with this node."""
+        node = self.get_object()
+        serializer = SyncRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Validation error", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        since_version = serializer.validated_data.get("since_version", 0)
+        data_types = serializer.validated_data.get("data_types", None)
+
+        queryset = FederatedData.objects.filter(version__gt=since_version).order_by(
+            "version"
+        )[:1000]
+
+        if data_types:
+            queryset = queryset.filter(data_type__in=data_types)
+
+        serializer = FederatedDataSerializer(queryset, many=True)
+        return Response(
+            {
+                "data": serializer.data,
+                "latest_version": queryset.last().version
+                if queryset.exists()
+                else since_version,
+            }
+        )
+
+    @action(detail=True, methods=["post"])
+    def announce(self, request, name=None):
+        """Announce new data to this node."""
+        node = self.get_object()
+        serializer = AnnounceRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Validation error", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+
+        message = SyncMessage.objects.create(
+            message_type=data["message_type"],
+            sender_node=node,
+            sender_endpoint=data.get("sender_endpoint", ""),
+            payload=data["payload"],
+            previous_hash=data.get("previous_hash", ""),
+            signature=data.get("signature", ""),
+        )
+
+        self.process_announce(message)
+
+        return Response({"status": "announced", "message_id": str(message.message_id)})
+
+    def process_announce(self, message: SyncMessage):
+        """Process an announce message and store the data."""
+        payload = message.payload
+        data_type = payload.get("data_type")
+        data_id = payload.get("data_id")
+        data = payload.get("data", {})
+        version = payload.get("version", 1)
+
+        if not all([data_type, data_id]):
+            message.is_processed = True
+            message.save(update_fields=["is_processed"])
+            return
+
+        existing = FederatedData.objects.filter(
+            node=message.sender_node, data_type=data_type, data_id=data_id
+        ).first()
+
+        if existing:
+            if version > existing.version:
+                existing.data = data
+                existing.version = version
+                existing.save(update_fields=["data", "version"])
+                DataSyncLog.objects.create(
+                    source_node=message.sender_node,
+                    target_node=message.sender_node,
+                    data_type=data_type,
+                    data_id=data_id,
+                    version=version,
+                    status="conflict",
+                    details="Updated with higher version",
+                )
+        else:
+            FederatedData.objects.create(
+                node=message.sender_node,
+                data_type=data_type,
+                data_id=data_id,
+                data=data,
+                version=version,
+            )
+
+        message.is_processed = True
+        message.save(update_fields=["is_processed"])
+
+    @action(detail=True, methods=["get"])
+    def peers(self, request, name=None):
+        """Get list of active peer nodes."""
+        node = self.get_object()
+        peers = FederatedNode.objects.filter(is_active=True).exclude(name=node.name)
+        serializer = FederatedNodeSerializer(peers, many=True)
+        return Response({"peers": serializer.data})
+
+
+class DataSyncView(APIView):
+    """View for handling data synchronization between nodes."""
+
+    def get(self, request):
+        """Get all data since version."""
+        since = int(request.query_params.get("since", 0))
+        data_types = request.query_params.getlist("data_types")
+
+        queryset = FederatedData.objects.filter(version__gt=since).order_by("version")
+
+        if data_types:
+            queryset = queryset.filter(data_type__in=data_types)
+
+        latest_version = since
+        items = list(queryset[:500])
+        if items:
+            latest_version = items[-1].version
+
+        serializer = FederatedDataSerializer(items, many=True)
+        return Response(
+            {
+                "items": serializer.data,
+                "latest_version": latest_version,
+            }
+        )
+
+    def post(self, request):
+        """Push data to the network."""
+        node_name = request.data.get("node_name")
+        if not node_name:
+            return Response(
+                {"error": "node_name required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            node = FederatedNode.objects.get(name=node_name, is_active=True)
+        except FederatedNode.DoesNotExist:
+            return Response(
+                {"error": "Node not found or inactive"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        data_type = request.data.get("data_type")
+        data_id = request.data.get("data_id")
+        data = request.data.get("data", {})
+        version = request.data.get("version", 1)
+
+        federated_data, created = FederatedData.objects.update_or_create(
+            node=node,
+            data_type=data_type,
+            data_id=data_id,
+            defaults={"data": data, "version": version},
+        )
+
+        return Response(
+            {
+                "status": "synced",
+                "data_type": data_type,
+                "data_id": data_id,
+                "version": federated_data.version,
+                "created": created,
+            }
+        )
+
+
+class SyncMessagesViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for viewing sync messages."""
+
+    queryset = SyncMessage.objects.all()
+    serializer_class = SyncMessageSerializer
+
+    def get_queryset(self):
+        queryset = SyncMessage.objects.all()
+        message_type = self.request.query_params.get("message_type")
+        is_processed = self.request.query_params.get("is_processed")
+        sender = self.request.query_params.get("sender")
+
+        if message_type:
+            queryset = queryset.filter(message_type=message_type)
+        if is_processed is not None:
+            queryset = queryset.filter(is_processed=is_processed.lower() == "true")
+        if sender:
+            queryset = queryset.filter(sender_node__name=sender)
+
+        return queryset[:1000]
+
+
+class DataSyncLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for viewing sync logs."""
+
+    queryset = DataSyncLog.objects.all()
+    serializer_class = DataSyncLogSerializer
+
+    def get_queryset(self):
+        queryset = DataSyncLog.objects.all()
+        status_filter = self.request.query_params.get("status")
+        source = self.request.query_params.get("source")
+        target = self.request.query_params.get("target")
+
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if source:
+            queryset = queryset.filter(source_node__name=source)
+        if target:
+            queryset = queryset.filter(target_node__name=target)
+
+        return queryset[:500]
+
+
+from apps.core.models import IssuerMetrics, IssuerEndorsement
+from apps.core.serializers import (
+    IssuerMetricsSerializer,
+    IssuerMetricsCreateSerializer,
+    IssuerEndorsementSerializer,
+    IssuerEndorsementCreateSerializer,
+    TrustScoreRequestSerializer,
+    TrustScoreResponseSerializer,
+)
+from apps.core.utils import TrustScorer, TRUST_THRESHOLDS
+
+
+class IssuerMetricsViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing issuer metrics."""
+
+    queryset = IssuerMetrics.objects.all()
+    serializer_class = IssuerMetricsSerializer
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return IssuerMetricsCreateSerializer
+        return IssuerMetricsSerializer
+
+    def get_queryset(self):
+        queryset = IssuerMetrics.objects.all()
+        issuer_did = self.request.query_params.get("issuer_did")
+        scope_value = self.request.query_params.get("scope_value")
+
+        if issuer_did:
+            queryset = queryset.filter(issuer_did=issuer_did)
+        if scope_value:
+            queryset = queryset.filter(scope__value=scope_value)
+
+        return queryset
+
+
+class IssuerEndorsementViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing issuer endorsements."""
+
+    queryset = IssuerEndorsement.objects.all()
+    serializer_class = IssuerEndorsementSerializer
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return IssuerEndorsementCreateSerializer
+        return IssuerEndorsementSerializer
+
+    def get_queryset(self):
+        queryset = IssuerEndorsement.objects.all()
+        endorser = self.request.query_params.get("endorser_did")
+        endorsed = self.request.query_params.get("endorsed_issuer_did")
+        is_positive = self.request.query_params.get("is_positive")
+
+        if endorser:
+            queryset = queryset.filter(endorser_did=endorser)
+        if endorsed:
+            queryset = queryset.filter(endorsed_issuer_did=endorsed)
+        if is_positive is not None:
+            queryset = queryset.filter(is_positive=is_positive.lower() == "true")
+
+        return queryset
+
+    @action(detail=True, methods=["post"])
+    def toggle(self, request, pk=None):
+        """Toggle endorsement active status."""
+        endorsement = self.get_object()
+        endorsement.is_active = not endorsement.is_active
+        endorsement.save(update_fields=["is_active"])
+        serializer = self.get_serializer(endorsement)
+        return Response(serializer.data)
+
+
+class GetTrustScoreAPIView(APIView):
+    """API endpoint for getting trust score of an issuer."""
+
+    def get(self, request):
+        """Get trust score for an issuer."""
+        issuer_did = request.query_params.get("issuer_did")
+        scope_value = request.query_params.get("scope_value")
+        scope_type = request.query_params.get("scope_type")
+        threshold = request.query_params.get("threshold", "medium")
+
+        if not issuer_did or not scope_value:
+            return Response(
+                {"error": "issuer_did and scope_value query parameters required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            scope = Scope.objects.get(value=scope_value)
+            if scope_type and scope.scope_type.name != scope_type:
+                return Response(
+                    {"error": f"Scope does not match scope_type '{scope_type}'"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Scope.DoesNotExist:
+            return Response(
+                {"error": f"Scope '{scope_value}' not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        metrics = IssuerMetrics.objects.filter(
+            issuer_did=issuer_did, scope=scope
+        ).first()
+
+        if not metrics:
+            return Response(
+                {
+                    "issuer_did": issuer_did,
+                    "scope": scope_value,
+                    "trust_score": 0.0,
+                    "trust_level": "low",
+                    "meets_threshold": False,
+                    "threshold": threshold,
+                    "metrics": None,
+                    "message": "No metrics found for this issuer",
+                }
+            )
+
+        score = TrustScorer.calculate_score(metrics)
+        meets_threshold = score >= TRUST_THRESHOLDS.get(threshold, 0.0)
+
+        metrics_serializer = IssuerMetricsSerializer(metrics)
+
+        return Response(
+            {
+                "issuer_did": issuer_did,
+                "scope": scope_value,
+                "trust_score": score,
+                "trust_level": TrustScorer.get_trust_level(score),
+                "meets_threshold": meets_threshold,
+                "threshold": threshold,
+                "threshold_value": TRUST_THRESHOLDS.get(threshold, 0.0),
+                "metrics": metrics_serializer.data,
+            }
+        )
+
+
+class CheckIssuerTrustAPIView(APIView):
+    """API endpoint for checking if an issuer meets trust threshold."""
+
+    def post(self, request):
+        """Check if issuer meets trust threshold for voting."""
+        serializer = TrustScoreRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Validation error", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+        issuer_did = data["issuer_did"]
+        scope_value = data["scope_value"]
+        threshold = data.get("threshold", "medium")
+
+        try:
+            scope = Scope.objects.get(value=scope_value)
+        except Scope.DoesNotExist:
+            return Response(
+                {"eligible": False, "reason": f"Scope '{scope_value}' not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        metrics = IssuerMetrics.objects.filter(
+            issuer_did=issuer_did, scope=scope
+        ).first()
+
+        if not metrics:
+            return Response(
+                {
+                    "eligible": False,
+                    "reason": f"No trust metrics found for issuer {issuer_did}",
+                    "trust_score": 0.0,
+                }
+            )
+
+        score = TrustScorer.calculate_score(metrics)
+        threshold_value = TRUST_THRESHOLDS.get(threshold, 0.0)
+
+        if score >= threshold_value:
+            return Response(
+                {
+                    "eligible": True,
+                    "trust_score": score,
+                    "trust_level": TrustScorer.get_trust_level(score),
+                    "threshold": threshold,
+                }
+            )
+        else:
+            return Response(
+                {
+                    "eligible": False,
+                    "reason": f"Trust score {score:.2f} below threshold {threshold_value}",
+                    "trust_score": score,
+                    "threshold": threshold,
+                }
+            )

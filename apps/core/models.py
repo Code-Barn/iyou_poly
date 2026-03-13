@@ -6,6 +6,9 @@ These models serve as the backbone for the entire project, enabling decentralize
 identity management and federated database functionality.
 """
 
+import datetime
+import uuid
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -294,6 +297,86 @@ class DataSyncLog(models.Model):
         return f"Sync {self.status}: {self.data_type}:{self.data_id} from {self.source_node} to {self.target_node}"
 
 
+class SyncMessageType(models.TextChoices):
+    ANNOUNCE = "announce", _("Announce")
+    REQUEST = "request", _("Request")
+    RESPONSE = "response", _("Response")
+    VOTE = "vote", _("Vote")
+    CREDENTIAL = "credential", _("Credential")
+    POLL = "poll", _("Poll")
+    MERKLE_UPDATE = "merkle_update", _("Merkle Update")
+    PING = "ping", _("Ping")
+    PONG = "pong", _("Pong")
+
+
+class SyncMessage(models.Model):
+    """
+    Model representing a gossip protocol message for federated data synchronization.
+
+    Messages are signed by the sending node and propagated to peers.
+    """
+
+    message_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        help_text=_("Unique identifier for this message."),
+    )
+    message_type = models.CharField(
+        max_length=20,
+        choices=SyncMessageType.choices,
+        help_text=_("The type of sync message."),
+    )
+    sender_node = models.ForeignKey(
+        FederatedNode,
+        on_delete=models.CASCADE,
+        related_name="sent_messages",
+        help_text=_("The node that sent this message."),
+    )
+    sender_endpoint = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text=_("The endpoint URL of the sending node."),
+    )
+    timestamp = models.DateTimeField(
+        default=datetime.datetime.utcnow,
+        help_text=_("When the message was created."),
+    )
+    signature = models.TextField(
+        blank=True,
+        help_text=_("Signature of the message by the sender node."),
+    )
+    payload = models.JSONField(
+        help_text=_("The message payload containing data and metadata."),
+    )
+    previous_hash = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text=_("Hash of the previous message for chain integrity."),
+    )
+    proof_of_work = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Proof of work nonce for message validation."),
+    )
+    is_processed = models.BooleanField(
+        default=False,
+        help_text=_("Whether this message has been processed."),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Sync Message")
+        verbose_name_plural = _("Sync Messages")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["message_type"]),
+            models.Index(fields=["sender_node", "timestamp"]),
+            models.Index(fields=["is_processed"]),
+        ]
+
+    def __str__(self):
+        return f"{self.message_type}:{self.message_id} from {self.sender_node.name}"
+
+
 class ScopeType(models.Model):
     """
     Registry of available scope types. Allows dynamic addition of new scope types
@@ -568,3 +651,129 @@ class IssuerAuthorization(models.Model):
 
     def __str__(self):
         return f"{self.issuer_did} authorized for {self.credential_type.name} in {self.scope}"
+
+
+class IssuerMetrics(models.Model):
+    """
+    Tracks trust metrics for each issuer within a specific scope.
+
+    Metrics are collected over time to calculate trust scores.
+    """
+
+    issuer_did = models.CharField(
+        max_length=255,
+        help_text=_("The DID of the issuer."),
+    )
+    scope = models.ForeignKey(
+        Scope,
+        on_delete=models.CASCADE,
+        related_name="issuer_metrics",
+        help_text=_("The scope these metrics apply to."),
+    )
+    total_credentials_issued = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Total number of credentials issued."),
+    )
+    unique_holders = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Number of unique credential holders."),
+    )
+    credentials_this_month = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Credentials issued in the current month."),
+    )
+    credentials_revoked = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Number of credentials revoked."),
+    )
+    verifications_attempted = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Number of verification attempts."),
+    )
+    verifications_successful = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Number of successful verifications."),
+    )
+    scope_violations = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Number of out-of-scope issuances."),
+    )
+    first_issuance = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the first credential was issued."),
+    )
+    last_updated = models.DateTimeField(
+        auto_now=True,
+        help_text=_("Last time metrics were updated."),
+    )
+
+    class Meta:
+        verbose_name = _("Issuer Metrics")
+        verbose_name_plural = _("Issuer Metrics")
+        unique_together = ("issuer_did", "scope")
+        ordering = ["-last_updated"]
+
+    def __str__(self):
+        return f"Metrics for {self.issuer_did} in {self.scope}"
+
+    @property
+    def revocation_rate(self) -> float:
+        """Calculate revocation rate as a percentage."""
+        if self.total_credentials_issued == 0:
+            return 0.0
+        return (self.credentials_revoked / self.total_credentials_issued) * 100
+
+    @property
+    def verification_success_rate(self) -> float:
+        """Calculate verification success rate as a decimal."""
+        if self.verifications_attempted == 0:
+            return 1.0
+        return self.verifications_successful / self.verifications_attempted
+
+
+class IssuerEndorsement(models.Model):
+    """
+    Allows issuers to endorse each other within a scope.
+
+    Endorsements contribute to trust scores.
+    """
+
+    endorser_did = models.CharField(
+        max_length=255,
+        help_text=_("The DID of the issuer giving the endorsement."),
+    )
+    endorsed_issuer_did = models.CharField(
+        max_length=255,
+        help_text=_("The DID of the issuer being endorsed."),
+    )
+    scope = models.ForeignKey(
+        Scope,
+        on_delete=models.CASCADE,
+        related_name="endorsements",
+        help_text=_("The scope of the endorsement."),
+    )
+    is_positive = models.BooleanField(
+        default=True,
+        help_text=_("Whether this is a positive endorsement."),
+    )
+    comment = models.TextField(
+        blank=True,
+        help_text=_("Optional comment about the endorsement."),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_("Whether this endorsement is active."),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("Issuer Endorsement")
+        verbose_name_plural = _("Issuer Endorsements")
+        unique_together = ("endorser_did", "endorsed_issuer_did", "scope")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        direction = "endorsed" if self.is_positive else "warned about"
+        return f"{self.endorser_did} {direction} {self.endorsed_issuer_did} in {self.scope}"

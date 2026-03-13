@@ -20,6 +20,14 @@ from apps.core.views import (
     IssueCredentialAPIView,
     VerifyCredentialAPIView,
     GetCredentialsAPIView,
+    FederatedNodeViewSet,
+    DataSyncView,
+    SyncMessagesViewSet,
+    DataSyncLogViewSet,
+    IssuerMetricsViewSet,
+    IssuerEndorsementViewSet,
+    GetTrustScoreAPIView,
+    CheckIssuerTrustAPIView,
 )
 
 router = DefaultRouter()
@@ -28,6 +36,13 @@ router.register(r"scopes", ScopeViewSet)
 router.register(r"credential-types", CredentialTypeViewSet)
 router.register(r"credential-issuances", CredentialIssuanceViewSet)
 router.register(r"issuer-authorizations", IssuerAuthorizationViewSet)
+router.register(r"federation/nodes", FederatedNodeViewSet, basename="federation-node")
+router.register(r"federation/messages", SyncMessagesViewSet, basename="sync-message")
+router.register(r"federation/logs", DataSyncLogViewSet, basename="sync-log")
+router.register(r"issuer-metrics", IssuerMetricsViewSet, basename="issuer-metrics")
+router.register(
+    r"issuer-endorsements", IssuerEndorsementViewSet, basename="issuer-endorsement"
+)
 
 urlpatterns = [
     # Federated Data API
@@ -70,4 +85,21 @@ urlpatterns = [
         name="verify_credential",
     ),
     path("api/credentials/", GetCredentialsAPIView.as_view(), name="get_credentials"),
+    # Federation sync endpoint
+    path(
+        "api/federation/sync/",
+        DataSyncView.as_view(),
+        name="federation_sync",
+    ),
+    # Trust scoring endpoints
+    path(
+        "api/trust/score/",
+        GetTrustScoreAPIView.as_view(),
+        name="trust_score",
+    ),
+    path(
+        "api/trust/check/",
+        CheckIssuerTrustAPIView.as_view(),
+        name="trust_check",
+    ),
 ]

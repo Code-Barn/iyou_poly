@@ -97,7 +97,6 @@ def poll_api(request: HttpRequest) -> JsonResponse:
                 title=title,
                 description=description,
                 created_by=request.user,
-                geographical_scope_id=1,  # Default geographical scope
             )
 
             # Create the options
@@ -313,7 +312,9 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
 
         # Get poll and option
         try:
-            poll = Poll.objects.get(id=poll_id, is_active=True)
+            poll = Poll.objects.select_related(
+                "required_scope_type", "required_scope", "required_credential_type"
+            ).get(id=poll_id, is_active=True)
             option = PollOption.objects.get(id=option_id, poll=poll)
         except Poll.DoesNotExist:
             return JsonResponse(
@@ -332,6 +333,82 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                 {"status": "error", "message": "You have already voted in this poll."},
                 status=400,
             )
+
+        # Check scope/credential requirements
+        if (
+            poll.required_scope_type
+            or poll.required_scope
+            or poll.required_credential_type
+        ):
+            from apps.core.models import CredentialIssuance
+
+            # Get user's DIDs
+            dids = user.dids.filter(is_primary=True)
+            if not dids.exists():
+                return JsonResponse(
+                    {
+                        "status": "error",
+                        "message": "You need a DID to vote in scoped polls. Please create a DID first.",
+                        "requires_credential": True,
+                    },
+                    status=403,
+                )
+
+            # Check if user has valid credentials for this poll
+            user_credentials = CredentialIssuance.objects.filter(
+                holder_did__in=[did.did_uri for did in dids], status="active"
+            ).select_related("scope", "credential_type", "scope__scope_type")
+
+            # Filter credentials based on poll requirements
+            valid_credential = None
+            for cred in user_credentials:
+                # Check scope type requirement
+                if poll.required_scope_type:
+                    if cred.scope and cred.scope.scope_type != poll.required_scope_type:
+                        continue
+
+                # Check specific scope requirement
+                if poll.required_scope:
+                    if not cred.scope or cred.scope != poll.required_scope:
+                        continue
+
+                # Check credential type requirement
+                if poll.required_credential_type:
+                    if cred.credential_type != poll.required_credential_type:
+                        continue
+
+                # User has a valid credential
+                valid_credential = cred
+                break
+
+            if not valid_credential:
+                scope_info = ""
+                if poll.required_scope:
+                    scope_info = f" for {poll.required_scope.value} ({poll.required_scope.scope_type.display_name})"
+                elif poll.required_scope_type:
+                    scope_info = f" for any {poll.required_scope_type.display_name}"
+
+                cred_info = ""
+                if poll.required_credential_type:
+                    cred_info = f" with a {poll.required_credential_type.display_name} credential"
+
+                return JsonResponse(
+                    {
+                        "status": "error",
+                        "message": f"This poll requires a credential{scope_info}. You don't have the required credential.{cred_info}",
+                        "requires_credential": True,
+                        "required_scope": poll.required_scope.value
+                        if poll.required_scope
+                        else None,
+                        "required_scope_type": poll.required_scope_type.display_name
+                        if poll.required_scope_type
+                        else None,
+                        "required_credential_type": poll.required_credential_type.display_name
+                        if poll.required_credential_type
+                        else None,
+                    },
+                    status=403,
+                )
 
         # Create the vote
         Vote.objects.create(poll=poll, option=option, user=user)
@@ -438,7 +515,6 @@ def create_poll(request: HttpRequest) -> HttpResponse:
                     title=title,
                     description=description,
                     created_by=request.user,
-                    geographical_scope_id=1,  # Default geographical scope
                 )
 
                 # Create the options
@@ -544,12 +620,255 @@ def update_poll(request: HttpRequest, poll_id: int) -> HttpResponse:
 
     return render(
         request,
-        "poller/poll_update.html",
+        "poller/poll_detail.html",
         {
             "poll": poll,
-            "options": [option.text for option in poll.options.all()],
+            "user_vote": user_vote,
         },
     )
+
+
+# DRF Views for decentralized polling
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.core.models import ScopeType, Scope, CredentialIssuance
+
+from .models import Poll, PollOption, Vote
+from .serializers import (
+    PollSerializer,
+    PollCreateSerializer,
+    PollResultsSerializer,
+    VoteSerializer,
+    VoteCreateSerializer,
+)
+
+
+class PollViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Polls.
+    """
+
+    queryset = Poll.objects.all()
+    serializer_class = PollSerializer
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PollCreateSerializer
+        if self.action == "results":
+            return PollResultsSerializer
+        return PollSerializer
+
+    def get_queryset(self):
+        queryset = Poll.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == "true")
+        return queryset
+
+    @action(detail=True, methods=["get"])
+    def results(self, request, pk=None):
+        """Get poll results."""
+        poll = self.get_object()
+        serializer = PollResultsSerializer(poll)
+        return Response(serializer.data)
+
+
+class VoteViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Votes.
+    """
+
+    queryset = Vote.objects.all()
+    serializer_class = VoteSerializer
+
+    def get_queryset(self):
+        queryset = Vote.objects.all()
+        poll_id = self.request.query_params.get("poll_id")
+        voter_did = self.request.query_params.get("voter_did")
+
+        if poll_id:
+            queryset = queryset.filter(poll_id=poll_id)
+        if voter_did:
+            queryset = queryset.filter(voter_did=voter_did)
+
+        return queryset
+
+
+class CastVoteAPIView(APIView):
+    """
+    API endpoint for casting a vote.
+
+    POST /api/polls/{poll_id}/vote/
+    """
+
+    def post(self, request, poll_id):
+        serializer = VoteCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Validation error", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+
+        try:
+            poll = Poll.objects.get(id=poll_id, is_active=True)
+        except Poll.DoesNotExist:
+            return Response(
+                {"error": "Poll not found or inactive"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if poll.is_expired:
+            return Response(
+                {"error": "Poll has ended"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        voter_did = data.get("voter_did")
+
+        if Vote.objects.filter(poll=poll, voter_did=voter_did).exists():
+            return Response(
+                {"error": "Already voted in this poll"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verify credential if required
+        if poll.required_scope_type and poll.required_credential_type:
+            credential = data.get("credential")
+            if not credential:
+                return Response(
+                    {"error": "Credential required to vote in this poll"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Verify credential
+            verify_url = request.build_absolute_uri("/api/credentials/verify/")
+            import requests as req
+
+            verify_response = req.post(
+                verify_url,
+                json={
+                    "credential": credential,
+                    "required_scope_type": poll.required_scope_type.name
+                    if poll.required_scope_type
+                    else None,
+                    "required_scope_value": poll.required_scope.value
+                    if poll.required_scope
+                    else None,
+                },
+            )
+
+            if not verify_response.ok or not verify_response.json().get("can_vote"):
+                return Response(
+                    {
+                        "error": "Credential verification failed",
+                        "details": verify_response.json(),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            option = PollOption.objects.get(id=data["option_id"], poll=poll)
+        except PollOption.DoesNotExist:
+            return Response(
+                {"error": "Option not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        vote = Vote.objects.create(
+            poll=poll,
+            option=option,
+            voter_did=voter_did,
+            signature=data.get("signature", ""),
+            credential_cid=data.get("credential_cid", ""),
+            credential_proof=data.get("credential", {}),
+            is_verified=True,
+            verification_details={"credential_verified": True},
+        )
+
+        option.votes += 1
+        option.save()
+
+        return Response(
+            {
+                "vote_id": vote.id,
+                "status": "success",
+                "message": "Vote recorded successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CheckVotingEligibilityAPIView(APIView):
+    """
+    API endpoint for checking if a user can vote in a poll.
+
+    GET /api/polls/{poll_id}/eligibility/?voter_did=<did>
+    """
+
+    def get(self, request, poll_id):
+        voter_did = request.query_params.get("voter_did")
+
+        if not voter_did:
+            return Response(
+                {"error": "voter_did query parameter required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            poll = Poll.objects.get(id=poll_id, is_active=True)
+        except Poll.DoesNotExist:
+            return Response(
+                {"error": "Poll not found or inactive"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if poll.is_expired:
+            return Response({"eligible": False, "reason": "Poll has ended"})
+
+        # Check if already voted
+        if Vote.objects.filter(poll=poll, voter_did=voter_did).exists():
+            return Response({"eligible": False, "reason": "Already voted in this poll"})
+
+        # Check scope requirements
+        eligibility = {
+            "eligible": True,
+            "requires_credential": False,
+            "scope_type": None,
+            "scope_value": None,
+            "credential_type": None,
+        }
+
+        if poll.required_scope_type:
+            eligibility["requires_credential"] = True
+            eligibility["scope_type"] = poll.required_scope_type.name
+            eligibility["scope_value"] = (
+                poll.required_scope.value if poll.required_scope else None
+            )
+            eligibility["credential_type"] = (
+                poll.required_credential_type.name
+                if poll.required_credential_type
+                else None
+            )
+
+            # Check if voter has valid credential
+            if poll.required_credential_type:
+                has_cred = CredentialIssuance.objects.filter(
+                    holder_did=voter_did,
+                    credential_type=poll.required_credential_type,
+                    scope=poll.required_scope,
+                    status="active",
+                ).exists()
+
+                if not has_cred:
+                    eligibility["eligible"] = False
+                    eligibility["reason"] = (
+                        f"No valid {poll.required_credential_type.name} credential for scope {poll.required_scope.value if poll.required_scope else ''}"
+                    )
+
+        return Response(eligibility)
 
 
 @login_required
@@ -618,8 +937,60 @@ def poll_list(request: HttpRequest) -> HttpResponse:
     Returns:
         HttpResponse: A response containing the poll list page.
     """
-    polls = Poll.objects.filter(is_active=True).prefetch_related("options", "votes")
-    return render(request, "poller/poll_list.html", {"polls": polls})
+    from apps.core.models import CredentialIssuance, ScopeType, Scope
+
+    polls = (
+        Poll.objects.filter(is_active=True)
+        .prefetch_related("options", "votes")
+        .select_related(
+            "required_scope_type",
+            "required_scope",
+            "required_credential_type",
+            "created_by",
+        )
+    )
+
+    # Get user's credentials if logged in
+    user_scopes = []
+    user_credentials = []
+    if request.user.is_authenticated:
+        from apps.accounts.models import User
+
+        dids = request.user.dids.filter(is_primary=True)
+        for did in dids:
+            credentials = CredentialIssuance.objects.filter(
+                holder_did=did.did_uri, status="active"
+            ).select_related("scope", "credential_type", "scope__scope_type")
+            user_credentials.extend(credentials)
+            user_scopes.extend([c.scope for c in credentials if c.scope])
+
+    # Get available scope types for filtering
+    scope_types = ScopeType.objects.filter(is_active=True).order_by(
+        "hierarchy_depth", "name"
+    )
+
+    # Get filter params
+    filter_scope_type = request.GET.get("scope_type")
+    filter_scope = request.GET.get("scope")
+
+    # Filter polls by scope if requested
+    if filter_scope:
+        polls = polls.filter(required_scope_id=filter_scope)
+    elif filter_scope_type:
+        polls = polls.filter(required_scope_type_id=filter_scope_type)
+
+    return render(
+        request,
+        "poller/poll_list.html",
+        {
+            "polls": polls,
+            "user_credentials": user_credentials,
+            "user_scopes": user_scopes,
+            "scope_types": scope_types,
+            "filter_scope_type": filter_scope_type,
+            "filter_scope": filter_scope,
+        },
+    )
 
 
 @method_decorator(login_required, name="dispatch")
@@ -638,7 +1009,53 @@ class CreatePollView(View):
         Returns:
             HttpResponse: A response containing the poll creation form.
         """
-        return render(request, "poller/poll_create.html")
+        from apps.core.models import ScopeType, Scope, CredentialType
+
+        scope_types = ScopeType.objects.filter(is_active=True).order_by(
+            "hierarchy_depth", "name"
+        )
+
+        # Get user's credential-based scopes if logged in
+        user_scopes = []
+        if request.user.is_authenticated:
+            from apps.core.models import CredentialIssuance
+
+            dids = request.user.dids.filter(is_primary=True)
+            if dids.exists():
+                credentials = CredentialIssuance.objects.filter(
+                    holder_did__in=[did.did_uri for did in dids], status="active"
+                ).select_related("scope", "scope__scope_type")
+
+                user_scopes = [cred.scope for cred in credentials if cred.scope]
+
+        # If user has credentials with scopes, only show those scopes
+        # Otherwise show all scopes (for admins or users without credentials yet)
+        if user_scopes:
+            # Deduplicate scopes while preserving order
+            seen = set()
+            unique_scopes = []
+            for s in user_scopes:
+                if s.id not in seen:
+                    seen.add(s.id)
+                    unique_scopes.append(s)
+            scopes = unique_scopes
+        else:
+            scopes = Scope.objects.filter(is_active=True).select_related("scope_type")
+
+        credential_types = CredentialType.objects.filter(is_active=True).order_by(
+            "name"
+        )
+
+        return render(
+            request,
+            "poller/poll_create.html",
+            {
+                "scope_types": scope_types,
+                "scopes": scopes,
+                "credential_types": credential_types,
+                "user_has_credentials": len(user_scopes) > 0 if user_scopes else False,
+            },
+        )
 
     def post(self, request: HttpRequest) -> HttpResponse:
         """
@@ -650,9 +1067,19 @@ class CreatePollView(View):
         Returns:
             HttpResponse: A response redirecting to the poll detail page or showing errors.
         """
+        from apps.core.models import ScopeType, Scope, CredentialType
+
         title = request.POST.get("title")
         description = request.POST.get("description", "")
-        options = request.POST.getlist("options")
+
+        # Handle options from textarea - one per line
+        options_text = request.POST.get("options", "")
+        options = [line.strip() for line in options_text.split("\n") if line.strip()]
+
+        # Handle scope requirements
+        required_scope_type_id = request.POST.get("required_scope_type")
+        required_scope_id = request.POST.get("required_scope")
+        required_credential_type_id = request.POST.get("required_credential_type")
 
         # Validate input
         if not title or not options:
@@ -671,12 +1098,41 @@ class CreatePollView(View):
 
         try:
             with transaction.atomic():
+                # Get scope objects if provided
+                required_scope_type = None
+                required_scope = None
+                required_credential_type = None
+
+                if required_scope_type_id:
+                    try:
+                        required_scope_type = ScopeType.objects.get(
+                            id=required_scope_type_id
+                        )
+                    except ScopeType.DoesNotExist:
+                        pass
+
+                if required_scope_id:
+                    try:
+                        required_scope = Scope.objects.get(id=required_scope_id)
+                    except Scope.DoesNotExist:
+                        pass
+
+                if required_credential_type_id:
+                    try:
+                        required_credential_type = CredentialType.objects.get(
+                            id=required_credential_type_id
+                        )
+                    except CredentialType.DoesNotExist:
+                        pass
+
                 # Create the poll
                 poll = Poll.objects.create(
                     title=title,
                     description=description,
                     created_by=request.user,
-                    geographical_scope_id=1,  # Default geographical scope
+                    required_scope_type=required_scope_type,
+                    required_scope=required_scope,
+                    required_credential_type=required_credential_type,
                 )
 
                 # Create the options

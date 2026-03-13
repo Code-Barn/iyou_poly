@@ -58,7 +58,13 @@ def sync_poll(poll, created=False):
         "title": poll.title,
         "description": poll.description,
         "created_by": poll.created_by.username,
-        "geographical_scope": poll.geographical_scope.name,
+        "required_scope_type": poll.required_scope_type.name
+        if poll.required_scope_type
+        else None,
+        "required_scope": poll.required_scope.value if poll.required_scope else None,
+        "required_credential_type": poll.required_credential_type.name
+        if poll.required_credential_type
+        else None,
         "is_active": poll.is_active,
         "options": [{"text": option.text, "votes": option.votes} for option in options],
     }

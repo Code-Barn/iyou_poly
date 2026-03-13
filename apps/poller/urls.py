@@ -6,9 +6,14 @@ including endpoints for managing polls and votes, as well as server-side rendere
 """
 
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
 from apps.poller.views import (
+    CastVoteAPIView,
+    CheckVotingEligibilityAPIView,
     CreatePollView,
+    PollViewSet,
+    VoteViewSet,
     poll_api,
     poll_detail,
     poll_detail_api,
@@ -16,7 +21,11 @@ from apps.poller.views import (
     vote_api,
 )
 
-urlpatterns = [
+router = DefaultRouter()
+router.register(r"api/polls", PollViewSet, basename="poll")
+router.register(r"api/votes", VoteViewSet, basename="vote")
+
+urlpatterns = router.urls + [
     # Poll API
     path(
         "api/polls/",
@@ -33,6 +42,17 @@ urlpatterns = [
         "api/polls/<int:poll_id>/vote/",
         vote_api,
         name="vote_api",
+    ),
+    # DRF voting endpoints
+    path(
+        "api/polls/<int:poll_id>/cast/",
+        CastVoteAPIView.as_view(),
+        name="cast_vote_api",
+    ),
+    path(
+        "api/polls/<int:poll_id>/eligibility/",
+        CheckVotingEligibilityAPIView.as_view(),
+        name="check_eligibility_api",
     ),
     # Template Views
     path(

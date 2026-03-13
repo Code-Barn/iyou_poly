@@ -307,6 +307,39 @@ class GenerateCredentialView(View):
             logger.debug(f"VC issued successfully: {vc}")
             vc_data = json.loads(vc)
             user.add_vc(vc_data, credential_name or credential_type)
+
+            # Also create a CredentialIssuance record for scope tracking
+            from apps.core.models import ScopeType, Scope, CredentialType
+
+            scope_value = request.POST.get("scope_value", "").strip()
+
+            if scope_value:
+                # Get or create the scope
+                try:
+                    # Find matching credential type to get scope type
+                    cred_type = CredentialType.objects.filter(
+                        name=credential_type
+                    ).first()
+                    if cred_type:
+                        scope_type = cred_type.scope_type
+                        scope, _ = Scope.objects.get_or_create(
+                            scope_type=scope_type,
+                            value=scope_value,
+                            defaults={"is_active": True},
+                        )
+
+                        # Create credential issuance record
+                        CredentialIssuance.objects.create(
+                            credential=vc_data,
+                            holder_did=user.did,
+                            issuer_did=user.did,
+                            credential_type=cred_type,
+                            scope=scope,
+                            status="active",
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not create CredentialIssuance: {e}")
+
             messages.success(request, "Credential generated successfully!")
         else:
             logger.error("VC issuance failed")

@@ -7,19 +7,7 @@ allowing administrators to manage polls, poll options, votes, and geographical s
 
 from django.contrib import admin
 
-from apps.poller.models import GeographicalScope, Poll, PollOption, Vote
-
-
-@admin.register(GeographicalScope)
-class GeographicalScopeAdmin(admin.ModelAdmin):
-    """
-    Admin interface for the GeographicalScope model.
-    """
-
-    list_display = ("name", "is_active", "created_at", "updated_at")
-    list_filter = ("is_active",)
-    search_fields = ("name", "description")
-    ordering = ("name",)
+from apps.poller.models import Poll, PollOption, Vote
 
 
 @admin.register(Poll)
@@ -31,14 +19,13 @@ class PollAdmin(admin.ModelAdmin):
     list_display = (
         "title",
         "created_by",
-        "geographical_scope",
+        "required_scope_type",
+        "required_scope",
         "is_active",
         "created_at",
-        "updated_at",
     )
-    list_filter = ("geographical_scope", "is_active", "created_by")
+    list_filter = ("is_active", "created_by")
     search_fields = ("title", "description", "created_by__username")
-    autocomplete_fields = ("created_by",)
     ordering = ("-created_at",)
 
 
@@ -61,8 +48,8 @@ class VoteAdmin(admin.ModelAdmin):
     Admin interface for the Vote model.
     """
 
-    list_display = ("poll", "option", "user", "created_at")
-    list_filter = ("poll", "option", "user")
-    search_fields = ("poll__title", "option__text", "user__username")
+    list_display = ("poll", "option", "voter_did", "is_verified", "created_at")
+    list_filter = ("poll", "is_verified")
+    search_fields = ("poll__title", "option__text", "voter_did")
     raw_id_fields = ("poll", "option", "user")
     ordering = ("-created_at",)

@@ -29,9 +29,11 @@ from apps.accounts.views import (
     UpdateVCNameView,
     VCManagementView,
 )
+from apps.poller.views import poll_list
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("", poll_list, name="poll_list"),  # Home page - poll list
     path("", include("apps.core.urls")),
     path("", include("apps.poller.urls")),
     path("__debug__/", include("debug_toolbar.urls")),  # Django Debug Toolbar

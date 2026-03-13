@@ -63,6 +63,56 @@
     </div>
 </div>
 
+<div id="vote-error-{{ poll.id }}" class="mt-4" role="alert" aria-live="assertive"></div>
+
+<script>
+    // Handle HTMX responses for credential errors
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        // Check if this is a vote form response
+        if (evt.detail.target.id === 'vote-form-{{ poll.id }}') {
+            try {
+                const response = evt.detail.xhr.responseText;
+                // Try to parse as JSON
+                const data = JSON.parse(response);
+                if (data.status === 'error' && data.requires_credential) {
+                    const errorDiv = document.getElementById('vote-error-{{ poll.id }}');
+                    if (errorDiv) {
+                        let message = '<div class="bg-red-50 border-l-4 border-red-400 p-4">';
+                        message += '<p class="text-red-700 font-medium">' + data.message + '</p>';
+
+                        if (data.required_credential_type || data.required_scope) {
+                            message += '<p class="text-red-600 text-sm mt-1">This poll requires:';
+                            if (data.required_scope) {
+                                message += '<br>• Scope: ' + data.required_scope;
+                            }
+                            if (data.required_scope_type) {
+                                message += '<br>• Scope Type: ' + data.required_scope_type;
+                            }
+                            if (data.required_credential_type) {
+                                message += '<br>• Credential: ' + data.required_credential_type;
+                            }
+                            message += '</p>';
+                        }
+
+                        message += '<p class="text-red-600 text-sm mt-2">' +
+                            '<a href="{% url 'vc_management' %}" class="underline">Get credentials</a> to vote in this poll.' +
+                            '</p></div>';
+
+                        errorDiv.innerHTML = message;
+                    }
+                    // Remove the form to prevent double submission
+                    const form = document.querySelector('#vote-form-{{ poll.id }} form');
+                    if (form) {
+                        form.remove();
+                    }
+                }
+            } catch (e) {
+                // Not JSON, probably HTML - ignore
+            }
+        }
+    });
+</script>
+
 <div id="vote-results-{{ poll.id }}" class="mt-6" role="region" aria-labelledby="vote-results-heading-{{ poll.id }}">
     <h3 id="vote-results-heading-{{ poll.id }}" class="sr-only">Vote results for {{ poll.title }}</h3>
     {% with total_votes=poll.votes.count %}
