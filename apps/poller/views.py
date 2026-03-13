@@ -344,7 +344,13 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
 
             # Get user's DIDs
             dids = user.dids.filter(is_primary=True)
-            if not dids.exists():
+
+            # Also check legacy user.did field
+            all_did_uris = [did.did_uri for did in dids]
+            if user.did and user.did not in all_did_uris:
+                all_did_uris.append(user.did)
+
+            if not all_did_uris:
                 return JsonResponse(
                     {
                         "status": "error",
@@ -355,12 +361,38 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                 )
 
             # Check if user has valid credentials for this poll
+            # First check CredentialIssuance table
             user_credentials = CredentialIssuance.objects.filter(
-                holder_did__in=[did.did_uri for did in dids], status="active"
+                holder_did__in=all_did_uris, status="active"
             ).select_related("scope", "credential_type", "scope__scope_type")
+
+            # Also check user's stored VCs as backup
+            user_vcs = user.get_other_vcs() or []
+            vc_scopes = []
+            for vc in user_vcs:
+                vc_credential = vc.get("credential", {})
+                vc_type = vc_credential.get("type", [])
+                vc_subject = vc_credential.get("credentialSubject", {})
+                vc_description = vc_subject.get("description", "")
+
+                # Extract credential type from VC
+                for t in vc_type:
+                    if t != "VerifiableCredential":
+                        vc_scopes.append(
+                            {
+                                "type": t,
+                                "description": vc_description,
+                                "scope_value": vc.get(
+                                    "name", ""
+                                ),  # Use the VC name user gave
+                            }
+                        )
+                        break
 
             # Filter credentials based on poll requirements
             valid_credential = None
+
+            # Check CredentialIssuance credentials
             for cred in user_credentials:
                 # Check scope type requirement
                 if poll.required_scope_type:
@@ -380,6 +412,18 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                 # User has a valid credential
                 valid_credential = cred
                 break
+
+            # If no valid credential from CredentialIssuance, check stored VCs
+            if not valid_credential and user_vcs:
+                for vc_scope in vc_scopes:
+                    # Check credential type requirement
+                    if poll.required_credential_type:
+                        if poll.required_credential_type.name != vc_scope["type"]:
+                            continue
+
+                    # User has a valid VC (we'll allow it since it's in their profile)
+                    valid_credential = True
+                    break
 
             if not valid_credential:
                 scope_info = ""
@@ -956,13 +1000,47 @@ def poll_list(request: HttpRequest) -> HttpResponse:
     if request.user.is_authenticated:
         from apps.accounts.models import User
 
+        # Check new DID model
         dids = request.user.dids.filter(is_primary=True)
-        for did in dids:
+        did_uris = [did.did_uri for did in dids]
+
+        # Also check legacy user.did field
+        if request.user.did and request.user.did not in did_uris:
+            did_uris.append(request.user.did)
+
+        # Check CredentialIssuance table
+        for did_uri in did_uris:
             credentials = CredentialIssuance.objects.filter(
-                holder_did=did.did_uri, status="active"
+                holder_did=did_uri, status="active"
             ).select_related("scope", "credential_type", "scope__scope_type")
             user_credentials.extend(credentials)
             user_scopes.extend([c.scope for c in credentials if c.scope])
+
+        # Also include user's stored VCs as credentials
+        user_vcs = request.user.get_other_vcs() or []
+        for vc in user_vcs:
+            # Create a pseudo-credential from stored VC
+            vc_credential = vc.get("credential", {})
+            vc_type = vc_credential.get("type", [])
+            vc_subject = vc_credential.get("credentialSubject", {})
+
+            credential_type_name = "unknown"
+            for t in vc_type:
+                if t != "VerifiableCredential":
+                    credential_type_name = t
+                    break
+
+            user_credentials.append(
+                {
+                    "credential_type": {
+                        "name": credential_type_name,
+                        "display_name": credential_type_name.replace("_", " ").title(),
+                    },
+                    "scope": None,
+                    "scope_value": vc.get("name", ""),
+                    "is_vc": True,  # Flag to indicate this is from stored VC
+                }
+            )
 
     # Get available scope types for filtering
     scope_types = ScopeType.objects.filter(is_active=True).order_by(
@@ -989,6 +1067,7 @@ def poll_list(request: HttpRequest) -> HttpResponse:
             "scope_types": scope_types,
             "filter_scope_type": filter_scope_type,
             "filter_scope": filter_scope,
+            "user_has_credentials": len(user_credentials) > 0,
         },
     )
 
@@ -1017,16 +1096,32 @@ class CreatePollView(View):
 
         # Get user's credential-based scopes if logged in
         user_scopes = []
+        user_has_any_credentials = False
         if request.user.is_authenticated:
             from apps.core.models import CredentialIssuance
 
+            # Check new DID model
             dids = request.user.dids.filter(is_primary=True)
-            if dids.exists():
+            did_uris = [did.did_uri for did in dids]
+
+            # Also check legacy user.did field
+            if request.user.did and request.user.did not in did_uris:
+                did_uris.append(request.user.did)
+
+            # Check CredentialIssuance table
+            if did_uris:
                 credentials = CredentialIssuance.objects.filter(
-                    holder_did__in=[did.did_uri for did in dids], status="active"
+                    holder_did__in=did_uris, status="active"
                 ).select_related("scope", "scope__scope_type")
 
                 user_scopes = [cred.scope for cred in credentials if cred.scope]
+                if credentials.exists():
+                    user_has_any_credentials = True
+
+            # Also check stored VCs
+            user_vcs = request.user.get_other_vcs() or []
+            if user_vcs:
+                user_has_any_credentials = True
 
         # If user has credentials with scopes, only show those scopes
         # Otherwise show all scopes (for admins or users without credentials yet)
@@ -1035,7 +1130,7 @@ class CreatePollView(View):
             seen = set()
             unique_scopes = []
             for s in user_scopes:
-                if s.id not in seen:
+                if s and s.id not in seen:
                     seen.add(s.id)
                     unique_scopes.append(s)
             scopes = unique_scopes
@@ -1053,7 +1148,7 @@ class CreatePollView(View):
                 "scope_types": scope_types,
                 "scopes": scopes,
                 "credential_types": credential_types,
-                "user_has_credentials": len(user_scopes) > 0 if user_scopes else False,
+                "user_has_credentials": user_has_any_credentials,
             },
         )
 

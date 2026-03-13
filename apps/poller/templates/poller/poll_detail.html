@@ -7,14 +7,14 @@
 {% endblock %}
 
 {% block content %}
-    <div class="bg-white shadow rounded-lg p-6" role="main" aria-labelledby="poll-title">
-        <h2 id="poll-title" class="text-2xl font-bold text-gray-900 mb-2">{{ poll.title }}</h2>
-        <p class="text-gray-600 mb-4">{{ poll.description }}</p>
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6" role="main" aria-labelledby="poll-title">
+        <h2 id="poll-title" class="text-2xl font-bold text-gray-900 dark:text-white mb-2">{{ poll.title }}</h2>
+        <p class="text-gray-600 dark:text-gray-400 mb-4">{{ poll.description }}</p>
 
         <!-- Poll Scope Display -->
         {% if poll.required_scope_type or poll.required_scope or poll.required_credential_type %}
         <div class="mb-4 flex flex-wrap gap-2">
-            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -26,7 +26,7 @@
                 {% endif %}
             </span>
             {% if poll.required_credential_type %}
-            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                 </svg>
@@ -36,7 +36,7 @@
         </div>
         {% endif %}
 
-        <div class="flex items-center text-sm text-gray-500 mb-6">
+        <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-6">
             <span>
                 Created by {{ poll.created_by.username }} •
                 {{ poll.created_at|timesince }} ago
@@ -102,5 +102,39 @@
                 }
             }
         });
+        
+        // Theme toggle setup
+        function setupThemeToggle() {
+            var btn = document.getElementById('theme-toggle');
+            if (btn && !btn._themeToggleSetup) {
+                btn._themeToggleSetup = true;
+                btn.addEventListener('click', function() {
+                    var isDark = document.documentElement.classList.contains('dark');
+                    var darkIcon = document.getElementById('theme-toggle-dark-icon');
+                    var lightIcon = document.getElementById('theme-toggle-light-icon');
+                    
+                    if (isDark) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                        if (darkIcon) darkIcon.classList.add('hidden');
+                        if (lightIcon) lightIcon.classList.remove('hidden');
+                        var nl = document.getElementById('navbar-logo');
+                        var fl = document.getElementById('footer-logo');
+                        if (nl) nl.src = '/static/polly_logo.png';
+                        if (fl) fl.src = '/static/createdinDeKalb.png';
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                        if (darkIcon) darkIcon.classList.remove('hidden');
+                        if (lightIcon) lightIcon.classList.add('hidden');
+                        var nl = document.getElementById('navbar-logo');
+                        var fl = document.getElementById('footer-logo');
+                        if (nl) nl.src = '/static/polly_logo_DM.png';
+                        if (fl) fl.src = '/static/createdinDeKalb_DM.png';
+                    }
+                });
+            }
+        }
+        setupThemeToggle();
     </script>
 {% endblock %}

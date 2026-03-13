@@ -1,15 +1,25 @@
 <!DOCTYPE html>
+{% load static %}
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Polly - Federated Polling{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
     <!-- HTMX for dynamic interactions -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <!-- Tailwind CSS for styling -->
+    <!-- Tailwind CSS for styling - configured for class-based dark mode -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- CSRF Token for HTMX requests -->
     <meta name="csrf-token" content="{{ csrf_token }}">
+
+    <!-- Apply dark mode class immediately to prevent flash -->
+    <script>
+        // Check if dark mode should be applied
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
 
     <!-- CSS Variables for theming -->
     <style>
@@ -19,18 +29,26 @@
             --primary-focus: #1d4ed8;
             --text-color: #1f2937;
             --bg-color: #f9fafb;
+            --bg-secondary: #ffffff;
             --border-color: #d1d5db;
             --success-color: #10b981;
             --error-color: #ef4444;
             --warning-color: #f59e0b;
             --info-color: #3b82f6;
+            
+            /* Scope type colors */
+            --scope-family: #10b981;
+            --scope-municipal: #3b82f6;
+            --scope-organization: #f59e0b;
+            --scope-club: #8b5cf6;
         }
-        .dark {
+        html.dark {
             --primary-color: #60a5fa;
             --primary-hover: #3b82f6;
             --primary-focus: #2563eb;
             --text-color: #f9fafb;
             --bg-color: #111827;
+            --bg-secondary: #1f2937;
             --border-color: #374151;
             --success-color: #10b981;
             --error-color: #ef4444;
@@ -41,6 +59,32 @@
             background-color: var(--bg-color);
             color: var(--text-color);
         }
+        
+        /* Dark mode overrides for common Tailwind patterns */
+        html.dark .bg-white { background-color: var(--bg-secondary) !important; }
+        html.dark .text-gray-900 { color: var(--text-color) !important; }
+        html.dark .text-gray-800 { color: var(--text-color) !important; }
+        html.dark .text-gray-700 { color: #d1d5db !important; }
+        html.dark .text-gray-600 { color: #9ca3af !important; }
+        html.dark .text-gray-500 { color: #6b7280 !important; }
+        html.dark .border-gray-200 { border-color: var(--border-color) !important; }
+        html.dark .border-gray-300 { border-color: var(--border-color) !important; }
+        html.dark nav { background-color: var(--bg-secondary) !important; }
+        html.dark footer { background-color: var(--bg-secondary) !important; }
+        
+        /* Theme toggle button always visible */
+        html.dark #theme-toggle { color: #fbbf24 !important; }
+        
+        /* Form elements dark mode */
+        html.dark select {
+            background-color: var(--bg-secondary) !important;
+            color: var(--text-color) !important;
+            border-color: var(--border-color) !important;
+        }
+        
+        /* Results graphs dark mode */
+        html.dark .bg-gray-50 { background-color: #374151 !important; }
+    </style>
     </style>
     {% block head %}{% endblock %}
     <!-- CSRF Token for HTMX requests -->
@@ -53,42 +97,75 @@
         });
     </script>
 </head>
-<body class="bg-gray-50">
+<body class="min-h-screen" style="background-color: var(--bg-color); color: var(--text-color);">
+<script>
+(function() {
+    var isDark = document.documentElement.classList.contains('dark');
+    var nl = document.getElementById('navbar-logo');
+    var fl = document.getElementById('footer-logo');
+    if (nl) nl.src = isDark ? '/static/polly_logo_DM.png' : '/static/polly_logo.png';
+    if (fl) fl.src = isDark ? '/static/createdinDeKalb_DM.png' : '/static/createdinDeKalb.png';
+    var darkIcon = document.getElementById('theme-toggle-dark-icon');
+    var lightIcon = document.getElementById('theme-toggle-light-icon');
+    if (isDark) {
+        if (darkIcon) darkIcon.classList.remove('hidden');
+    } else {
+        if (lightIcon) lightIcon.classList.remove('hidden');
+    }
+})();
+</script>
     {% include "partials/navbar.html" %}
+
+<script>
+(function() {
+    var isDark = document.documentElement.classList.contains('dark');
+    var nl = document.getElementById('navbar-logo');
+    var fl = document.getElementById('footer-logo');
+    if (nl) nl.src = isDark ? '/static/polly_logo_DM.png' : '/static/polly_logo.png';
+    if (fl) fl.src = isDark ? '/static/createdinDeKalb_DM.png' : '/static/createdinDeKalb.png';
+    var darkIcon = document.getElementById('theme-toggle-dark-icon');
+    var lightIcon = document.getElementById('theme-toggle-light-icon');
+    if (isDark) {
+        if (darkIcon) darkIcon.classList.remove('hidden');
+    } else {
+        if (lightIcon) lightIcon.classList.remove('hidden');
+    }
+})();
+</script>
 
     {% if messages %}
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
         {% for message in messages %}
         {% if message.tags == 'debug' %}
-        <div class="bg-gray-50 border-l-4 border-gray-400 p-4 mb-4">
-            <p class="text-gray-700">{{ message }}</p>
+        <div class="bg-gray-50 dark:bg-gray-800 border-l-4 border-gray-400 p-4 mb-4">
+            <p class="text-gray-700 dark:text-gray-300">{{ message }}</p>
         </div>
         {% elif message.tags == 'info' %}
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
-            <p class="text-blue-700">{{ message }}</p>
+        <div class="bg-blue-50 dark:bg-blue-900 border-l-4 border-blue-400 p-4 mb-4">
+            <p class="text-blue-700 dark:text-blue-300">{{ message }}</p>
         </div>
         {% elif message.tags == 'success' %}
-        <div class="bg-green-50 border-l-4 border-green-400 p-4 mb-4">
-            <p class="text-green-700">{{ message }}</p>
+        <div class="bg-green-50 dark:bg-green-900 border-l-4 border-green-400 p-4 mb-4">
+            <p class="text-green-700 dark:text-green-300">{{ message }}</p>
         </div>
         {% elif message.tags == 'warning' %}
-        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
-            <p class="text-yellow-700">{{ message }}</p>
+        <div class="bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-400 p-4 mb-4">
+            <p class="text-yellow-700 dark:text-yellow-300">{{ message }}</p>
         </div>
         {% elif message.tags == 'error' %}
-        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
-            <p class="text-red-700">{{ message }}</p>
+        <div class="bg-red-50 dark:bg-red-900 border-l-4 border-red-400 p-4 mb-4">
+            <p class="text-red-700 dark:text-red-300">{{ message }}</p>
         </div>
         {% else %}
-        <div class="bg-gray-50 border-l-4 border-gray-400 p-4 mb-4">
-            <p class="text-gray-700">{{ message }}</p>
+        <div class="bg-gray-50 dark:bg-gray-800 border-l-4 border-gray-400 p-4 mb-4">
+            <p class="text-gray-700 dark:text-gray-300">{{ message }}</p>
         </div>
         {% endif %}
         {% endfor %}
     </div>
     {% endif %}
 
-    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 dark:text-white">
         {% block content %}{% endblock %}
     </main>
 
@@ -96,34 +173,46 @@
 
     {% block scripts %}
     <script>
-        // Theme toggle functionality
-        const themeToggle = document.getElementById('theme-toggle');
-        const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
-        const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
-
-        // Check for saved theme in localStorage
-        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-            themeToggleDarkIcon.classList.remove('hidden');
-        } else {
-            document.documentElement.classList.remove('dark');
-            themeToggleLightIcon.classList.remove('hidden');
-        }
-
-        themeToggle.addEventListener('click', function() {
-            // Toggle icons
-            themeToggleDarkIcon.classList.toggle('hidden');
-            themeToggleLightIcon.classList.toggle('hidden');
-
-            // Toggle theme
-            if (document.documentElement.classList.contains('dark')) {
-                document.documentElement.classList.remove('dark');
-                localStorage.setItem('color-theme', 'light');
-            } else {
-                document.documentElement.classList.add('dark');
-                localStorage.setItem('color-theme', 'dark');
+        function setupThemeToggle() {
+            var btn = document.getElementById('theme-toggle');
+            if (btn && !btn._themeToggleSetup) {
+                btn._themeToggleSetup = true;
+                btn.addEventListener('click', function() {
+                    var isDark = document.documentElement.classList.contains('dark');
+                    var darkIcon = document.getElementById('theme-toggle-dark-icon');
+                    var lightIcon = document.getElementById('theme-toggle-light-icon');
+                    
+                    if (isDark) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                        if (darkIcon) darkIcon.classList.add('hidden');
+                        if (lightIcon) lightIcon.classList.remove('hidden');
+                        var nl = document.getElementById('navbar-logo');
+                        var fl = document.getElementById('footer-logo');
+                        if (nl) nl.src = '/static/polly_logo.png';
+                        if (fl) fl.src = '/static/createdinDeKalb.png';
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                        if (darkIcon) darkIcon.classList.remove('hidden');
+                        if (lightIcon) lightIcon.classList.add('hidden');
+                        var nl = document.getElementById('navbar-logo');
+                        var fl = document.getElementById('footer-logo');
+                        if (nl) nl.src = '/static/polly_logo_DM.png';
+                        if (fl) fl.src = '/static/createdinDeKalb_DM.png';
+                    }
+                });
             }
-        });
+        }
+        
+        // Try immediately
+        setupThemeToggle();
+        
+        // Also try on DOMContentLoaded and periodically
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupThemeToggle);
+        }
+        setInterval(setupThemeToggle, 500);
     </script>
     {% endblock %}
 </body>

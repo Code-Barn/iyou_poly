@@ -51,7 +51,7 @@
                         <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
                         <button
                             type="submit"
-                            class="bg-[color:var(--primary-color)] text-white px-4 py-2 rounded-md hover:bg-[color:var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[color:var(--primary-focus)]"
+                            class="text-white px-4 py-2 rounded-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 {% if forloop.counter0|divisibleby:4 %}bg-red-500{% elif forloop.counter0|add:1|divisibleby:4 %}bg-yellow-500{% elif forloop.counter0|add:2|divisibleby:4 %}bg-blue-500{% else %}bg-green-500{% endif %}"
                             aria-label="Submit vote for {{ option.text }}"
                         >
                             Vote
@@ -116,27 +116,75 @@
 <div id="vote-results-{{ poll.id }}" class="mt-6" role="region" aria-labelledby="vote-results-heading-{{ poll.id }}">
     <h3 id="vote-results-heading-{{ poll.id }}" class="sr-only">Vote results for {{ poll.title }}</h3>
     {% with total_votes=poll.votes.count %}
-    <div class="bg-gray-50 rounded-lg p-4">
-        <h3 class="text-lg font-medium text-gray-900 mb-3">Results</h3>
+    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white">Results</h3>
+            <div class="flex gap-2">
+                <button onclick="setResultFormat('{{ poll.id }}', 'bars')" id="fmt-bars-{{ poll.id }}" class="px-3 py-1 text-xs rounded-md bg-gray-200 dark:bg-gray-600 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none">Bars</button>
+                <button onclick="setResultFormat('{{ poll.id }}', 'pie')" id="fmt-pie-{{ poll.id }}" class="px-3 py-1 text-xs rounded-md bg-gray-200 dark:bg-gray-600 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none">Pie</button>
+                <button onclick="setResultFormat('{{ poll.id }}', 'vertical')" id="fmt-vertical-{{ poll.id }}" class="px-3 py-1 text-xs rounded-md bg-gray-200 dark:bg-gray-600 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none">Vertical</button>
+            </div>
+        </div>
+        
         {% if total_votes > 0 %}
-            <div class="space-y-2">
-                {% for option in poll.options.all %}
-                    {% with vote_count=option.vote_options.count %}
-                        <div class="flex items-center">
-                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+            <!-- Bars Format (default) -->
+            <div id="results-bars-{{ poll.id }}" class="result-format">
+                <div class="space-y-3">
+                    {% for option in poll.options.all %}
+                        {% with vote_count=option.vote_options.count|floatformat:0 %}
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-700 dark:text-gray-300 shrink-0 w-32 truncate">{{ option.text }}</span>
+                            <div class="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-5 min-w-[50px]">
                                 <div
-                                    class="bg-blue-600 h-2.5 rounded-full"
-                                    style="width: {% if total_votes > 0 %}{% widthratio vote_count total_votes 100 %}%{% else %}0{% endif %}"
+                                    class="h-5 rounded-full {% if forloop.counter0|divisibleby:4 %}bg-red-500{% elif forloop.counter0|add:1|divisibleby:4 %}bg-yellow-500{% elif forloop.counter0|add:2|divisibleby:4 %}bg-blue-500{% else %}bg-green-500{% endif %}"
+                                    style="width: {% widthratio vote_count total_votes 100 %}%"
                                 ></div>
                             </div>
-                            <span class="ml-3 text-sm text-gray-600">
-                                {{ option.text }} • {{ vote_count }} vote{{ vote_count|pluralize }}
-                            </span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">({{ vote_count }})</span>
                         </div>
-                    {% endwith %}
-                {% endfor %}
+                        {% endwith %}
+                    {% endfor %}
+                </div>
             </div>
-            <p class="text-sm text-gray-500 mt-2">
+            
+            <!-- Pie Chart Format -->
+            <div id="results-pie-{{ poll.id }}" class="result-format hidden">
+                <div class="flex justify-center">
+                    <div id="pie-chart-{{ poll.id }}" class="w-48 h-48 rounded-full" style="background: conic-gradient(#ef4444 0deg 360deg);"></div>
+                </div>
+                <div class="mt-4 flex flex-wrap justify-center gap-3">
+                    {% for option in poll.options.all %}
+                    {% with vote_count=option.vote_options.count %}
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full pie-color-{{ forloop.counter0 }}" data-vote-count="{{ vote_count }}"></span>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">{{ option.text }} ({{ vote_count }})</span>
+                    </div>
+                    {% endwith %}
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Vertical Bar Format -->
+            <div id="results-vertical-{{ poll.id }}" class="result-format hidden">
+                <div class="flex items-end justify-center gap-2 h-40">
+                    {% for option in poll.options.all %}
+                    {% with vote_count=option.vote_options.count %}
+                    <div class="flex flex-col items-center w-16">
+                        <span class="text-xs text-gray-600 dark:text-gray-400">{{ vote_count }}</span>
+                        <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-t-md h-32 flex items-end overflow-hidden">
+                            <div
+                                class="w-full {% if forloop.counter0|divisibleby:4 %}bg-red-500{% elif forloop.counter0|add:1|divisibleby:4 %}bg-yellow-500{% elif forloop.counter0|add:2|divisibleby:4 %}bg-blue-500{% else %}bg-green-500{% endif %}"
+                                style="height: {% widthratio vote_count total_votes 100 %}%"
+                            ></div>
+                        </div>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 truncate w-full text-center mt-1">{{ option.text }}</span>
+                    </div>
+                    {% endwith %}
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">
                 Total votes: {{ total_votes }}
             </p>
         {% else %}
@@ -144,4 +192,77 @@
         {% endif %}
     </div>
     {% endwith %}
+    
+    <script>
+        function setResultFormat(pollId, format) {
+            // Hide all formats
+            document.querySelectorAll('.result-format').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('[id^="fmt-"]').forEach(el => el.classList.remove('bg-blue-500', 'text-white'));
+            document.querySelectorAll('[id^="fmt-"]').forEach(el => el.classList.add('bg-gray-200'));
+            
+            // Show selected format
+            document.getElementById('results-' + format + '-' + pollId).classList.remove('hidden');
+            document.getElementById('fmt-' + format + '-' + pollId).classList.remove('bg-gray-200');
+            document.getElementById('fmt-' + format + '-' + pollId).classList.add('bg-blue-500', 'text-white');
+            
+            // Update pie chart dynamically
+            if (format === 'pie') {
+                updatePieChart(pollId);
+            }
+            
+            // Save preference
+            localStorage.setItem('pollResultFormat', format);
+        }
+        
+        function updatePieChart(pollId) {
+            const pieChart = document.getElementById('pie-chart-' + pollId);
+            if (!pieChart) return;
+            
+            const colors = ['#ef4444', '#eab308', '#3b82f6', '#22c55e'];
+            const legendItems = pieChart.parentElement.parentElement.querySelectorAll('[data-vote-count]');
+            
+            let total = 0;
+            const counts = [];
+            legendItems.forEach(item => {
+                const count = parseInt(item.dataset.voteCount) || 0;
+                counts.push(count);
+                total += count;
+            });
+            
+            if (total === 0) {
+                pieChart.style.background = '#e5e7eb';
+                return;
+            }
+            
+            let gradient = '';
+            let currentAngle = 0;
+            
+            for (let i = 0; i < counts.length; i++) {
+                if (counts[i] > 0) {
+                    const angle = (counts[i] / total) * 360;
+                    gradient += colors[i] + ' ' + currentAngle + 'deg ' + (currentAngle + angle) + 'deg';
+                    if (i < counts.length - 1) {
+                        gradient += ', ';
+                    }
+                    currentAngle += angle;
+                }
+            }
+            
+            pieChart.style.background = 'conic-gradient(' + gradient + ')';
+            
+            // Update legend colors
+            const legendColors = pieChart.parentElement.parentElement.querySelectorAll('.pie-color-0, .pie-color-1, .pie-color-2, .pie-color-3');
+            legendColors.forEach((el, idx) => {
+                if (colors[idx]) {
+                    el.style.backgroundColor = colors[idx];
+                }
+            });
+        }
+        
+        // Set default format on load
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedFormat = localStorage.getItem('pollResultFormat') || 'bars';
+            setResultFormat('{{ poll.id }}', savedFormat);
+        });
+    </script>
 </div>
