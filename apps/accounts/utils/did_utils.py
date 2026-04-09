@@ -3,13 +3,27 @@ Utility functions for working with Decentralized Identifiers (DIDs) and Verifiab
 
 This module adheres to W3C DID Core and Verifiable Credentials Data Model specifications.
 It uses DIDKit for DID/VC operations and supports multiple DID methods (e.g., did:key, did:web).
+
+The module now supports both Python (didkit) and Rust backends through the hybrid wrapper.
 """
 
 import json
 import logging
+import os
 from typing import Dict, List, Optional, Union
 
-import didkit
+# Try to use the hybrid wrapper first, fall back to direct didkit
+try:
+    from apps.accounts.did_rust_wrapper import generate_did as wrapper_generate_did
+    from apps.accounts.did_rust_wrapper import verify_vc as wrapper_verify_vc
+    from apps.accounts.did_rust_wrapper import issue_vc as wrapper_issue_vc
+    USE_RUST_WRAPPER = True
+    print("Using Rust-compatible DID wrapper")
+except ImportError:
+    import didkit
+    USE_RUST_WRAPPER = False
+    print("Using direct didkit implementation")
+
 from django.conf import settings
 from pydid import DID
 
@@ -30,6 +44,11 @@ def generate_did(method: str = "key", key_type: str = "Ed25519") -> str:
     Raises:
         ValueError: If the DID method or key type is unsupported.
     """
+    if USE_RUST_WRAPPER:
+        # Use the wrapper which handles both Python and Rust backends
+        return wrapper_generate_did(method)
+    
+    # Original didkit implementation
     if method == "key":
         if key_type == "Ed25519":
             key = didkit.generateEd25519Key()
@@ -296,6 +315,19 @@ def verify_vc(
     logger = logging.getLogger(__name__)
     logger.debug("Starting VC verification")
     logger.debug(f"VC to verify: {vc}")
+
+    # Use Rust wrapper if available
+    if USE_RUST_WRAPPER:
+        try:
+            if isinstance(vc, dict):
+                vc_json = json.dumps(vc)
+            else:
+                vc_json = vc
+            return wrapper_verify_vc(vc_json)
+        except Exception as e:
+            logger.error(f"Rust wrapper verification failed, falling back to didkit: {e}")
+            # Fall back to original implementation
+            pass
 
     try:
         # Handle both JSON strings and Python dictionaries
