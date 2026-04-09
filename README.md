@@ -58,6 +58,17 @@ Polly is a decentralized/federated identity provider and federated database fron
 - Add support for geographical layers (local, state, national, global).
 - Integrate polling functionality with the federated database.
 
+## Rust DID Implementation
+
+Polly uses a hybrid Python/Rust DID implementation for high-performance operations:
+
+```bash
+# Use Rust backend (recommended)
+DID_BACKEND=rust python manage.py runserver
+```
+
+See [docs/RUST_DID_INTEGRATION.md](docs/RUST_DID_INTEGRATION.md) for details.
+
 ## Verifiable Credential Management
 
 Polly provides a comprehensive interface for managing verifiable credentials:
