@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Polly - Federated Polling{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
+    <link rel="apple-touch-icon" href="{% static 'icon.png' %}">
     <!-- HTMX for dynamic interactions -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <!-- Tailwind CSS for styling - configured for class-based dark mode -->
@@ -35,7 +36,7 @@
             --error-color: #ef4444;
             --warning-color: #f59e0b;
             --info-color: #3b82f6;
-            
+
             /* Scope type colors */
             --scope-family: #10b981;
             --scope-municipal: #3b82f6;
@@ -59,7 +60,7 @@
             background-color: var(--bg-color);
             color: var(--text-color);
         }
-        
+
         /* Dark mode overrides for common Tailwind patterns */
         html.dark .bg-white { background-color: var(--bg-secondary) !important; }
         html.dark .text-gray-900 { color: var(--text-color) !important; }
@@ -71,17 +72,17 @@
         html.dark .border-gray-300 { border-color: var(--border-color) !important; }
         html.dark nav { background-color: var(--bg-secondary) !important; }
         html.dark footer { background-color: var(--bg-secondary) !important; }
-        
+
         /* Theme toggle button always visible */
         html.dark #theme-toggle { color: #fbbf24 !important; }
-        
+
         /* Form elements dark mode */
         html.dark select {
             background-color: var(--bg-secondary) !important;
             color: var(--text-color) !important;
             border-color: var(--border-color) !important;
         }
-        
+
         /* Results graphs dark mode */
         html.dark .bg-gray-50 { background-color: #374151 !important; }
     </style>
@@ -181,7 +182,7 @@
                     var isDark = document.documentElement.classList.contains('dark');
                     var darkIcon = document.getElementById('theme-toggle-dark-icon');
                     var lightIcon = document.getElementById('theme-toggle-light-icon');
-                    
+
                     if (isDark) {
                         document.documentElement.classList.remove('dark');
                         localStorage.setItem('color-theme', 'light');
@@ -204,10 +205,10 @@
                 });
             }
         }
-        
+
         // Try immediately
         setupThemeToggle();
-        
+
         // Also try on DOMContentLoaded and periodically
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', setupThemeToggle);

@@ -12,11 +12,18 @@
     </script>
 
     {% if user_vote %}
-        <div class="bg-green-50 border-l-4 border-green-400 p-4 mb-6" role="alert" aria-label="Your vote confirmation">
-            <p class="text-green-700">
-                You voted for <strong>{{ user_vote.option.text }}</strong>.
-            </p>
-        </div>
+    {# Find the index of the voted option #}
+    {% for option in poll.options.all %}
+        {% if option.id == user_vote.option.id %}
+            {% with voted_index=forloop.counter0 %}
+            <div class="border-l-4 p-4 mb-6 {% if voted_index|divisibleby:4 %}bg-red-50 border-red-400{% elif voted_index|add:1|divisibleby:4 %}bg-yellow-50 border-yellow-400{% elif voted_index|add:2|divisibleby:4 %}bg-blue-50 border-blue-400{% else %}bg-green-50 border-green-400{% endif %}" role="alert" aria-label="Your vote confirmation">
+                <p class="{% if voted_index|divisibleby:4 %}text-red-700{% elif voted_index|add:1|divisibleby:4 %}text-yellow-700{% elif voted_index|add:2|divisibleby:4 %}text-blue-700{% else %}text-green-700{% endif %}">
+                    You voted for <strong>{{ user_vote.option.text }}</strong>.
+                </p>
+            </div>
+            {% endwith %}
+            {% endif %}
+        {% endfor %}
     {% endif %}
 
     <div class="space-y-3" role="radiogroup" aria-labelledby="vote-form-heading-{{ poll.id }}">
@@ -66,13 +73,31 @@
 <div id="vote-error-{{ poll.id }}" class="mt-4" role="alert" aria-live="assertive"></div>
 
 <script>
-    // Handle HTMX responses for credential errors
+    // Handle HTMX responses for vote errors
     document.addEventListener('htmx:afterSwap', function(evt) {
         // Check if this is a vote form response
         if (evt.detail.target.id === 'vote-form-{{ poll.id }}') {
             try {
                 const response = evt.detail.xhr.responseText;
-                // Try to parse as JSON
+                const xhr = evt.detail.xhr;
+                
+                // Check for authentication error (401)
+                if (xhr.status === 401) {
+                    const data = JSON.parse(response);
+                    const errorDiv = document.getElementById('vote-error-{{ poll.id }}');
+                    if (errorDiv) {
+                        let message = '<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">';
+                        message += '<p class="text-yellow-700 font-medium">' + data.message + '</p>';
+                        message += '<p class="text-yellow-600 text-sm mt-2">Please <a href="/login/" class="underline font-semibold">log in</a> to vote in this poll.</p></div>';
+                        errorDiv.innerHTML = message;
+                    }
+                    // Remove the forms to prevent double submission
+                    const forms = document.querySelectorAll('#vote-form-{{ poll.id }} form');
+                    forms.forEach(form => form.remove());
+                    return;
+                }
+                
+                // Try to parse as JSON for credential errors
                 const data = JSON.parse(response);
                 if (data.status === 'error' && data.requires_credential) {
                     const errorDiv = document.getElementById('vote-error-{{ poll.id }}');
@@ -94,9 +119,7 @@
                             message += '</p>';
                         }
 
-                        message += '<p class="text-red-600 text-sm mt-2">' +
-                            '<a href="{% url 'vc_management' %}" class="underline">Get credentials</a> to vote in this poll.' +
-                            '</p></div>';
+                        message += '<p class="text-red-600 text-sm mt-2"><a href="/vc/" class="underline">Get credentials</a> to vote in this poll.</p></div>';
 
                         errorDiv.innerHTML = message;
                     }
@@ -108,6 +131,22 @@
                 }
             } catch (e) {
                 // Not JSON, probably HTML - ignore
+            }
+        }
+    });
+    
+    // Handle HTMX error responses
+    document.addEventListener('htmx:responseError', function(evt) {
+        if (evt.detail.target && evt.detail.target.id === 'vote-form-{{ poll.id }}') {
+            const xhr = evt.detail.xhr;
+            if (xhr.status === 401) {
+                const errorDiv = document.getElementById('vote-error-{{ poll.id }}');
+                if (errorDiv) {
+                    let message = '<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">';
+                    message += '<p class="text-yellow-700 font-medium">You must be logged in to vote.</p>';
+                    message += '<p class="text-yellow-600 text-sm mt-2">Please <a href="/login/" class="underline font-semibold">log in</a> to vote in this poll.</p></div>';
+                    errorDiv.innerHTML = message;
+                }
             }
         }
     });
