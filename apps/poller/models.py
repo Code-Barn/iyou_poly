@@ -14,6 +14,15 @@ from apps.core.models import FederatedData, Scope, ScopeType, CredentialType
 User = get_user_model()
 
 
+class PollType(models.TextChoices):
+    """Types of polls with different visibility and authorization rules."""
+
+    PUBLIC = "public", _("Public")
+    FAMILY_SCOPED = "family_scoped", _("Family-Scoped")
+    FAMILY_UNIT = "family_unit", _("Family-Unit")
+    ORGANIZATION = "organization", _("Organization")
+
+
 class Poll(models.Model):
     """
     Model representing a poll.
@@ -21,6 +30,28 @@ class Poll(models.Model):
     A poll consists of a question and multiple options for users to vote on.
     Supports scope-based voting requirements for decentralized authorization.
     """
+
+    poll_type = models.CharField(
+        max_length=20,
+        choices=PollType.choices,
+        default=PollType.PUBLIC,
+        help_text=_("Type of poll determining visibility and authorization rules."),
+    )
+
+    # Family/organization hierarchy
+    parent_poll = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="child_polls",
+        help_text=_("Parent poll for hierarchical family/organization polls."),
+    )
+    embedding_app = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=_("Embedding application identifier (e.g., 'byers-brands-llc', 'namechart')."),
+    )
 
     title = models.CharField(
         max_length=255,
@@ -79,6 +110,42 @@ class Poll(models.Model):
         help_text=_("Vote weight per voter. Always 1 for equal voting."),
     )
 
+    # Timing for scheduled polls
+    starts_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the poll starts. Null for immediate activation."),
+    )
+    ends_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the poll ends. Null for no end time."),
+    )
+
+    # Proposal mode for funding/decision workflows
+    is_proposal = models.BooleanField(
+        default=False,
+        help_text=_("Whether this is a proposal requiring funding."),
+    )
+    funding_goal = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Funding goal for proposal."),
+    )
+    funding_current = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text=_("Current funding amount."),
+    )
+    funding_deadline = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("Deadline for funding before proposal expires."),
+    )
+
     # Decentralized storage
     ipfs_cid = models.CharField(
         max_length=255,
@@ -105,11 +172,6 @@ class Poll(models.Model):
         default=True,
         help_text=_("Whether this poll is active and available for voting."),
     )
-    ends_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text=_("When the poll ends. Null for no end time."),
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -130,9 +192,28 @@ class Poll(models.Model):
         return False
 
     @property
+    def is_active_now(self):
+        """Check if poll is currently active (within start/end times)."""
+        from django.utils import timezone
+
+        now = timezone.now()
+        if self.starts_at and now < self.starts_at:
+            return False
+        if self.ends_at and now > self.ends_at:
+            return False
+        return self.is_active
+
+    @property
     def total_votes(self):
         """Get total vote count."""
         return sum(option.votes for option in self.options.all())
+
+    @property
+    def funding_progress(self):
+        """Get funding progress percentage."""
+        if not self.funding_goal or self.funding_goal == 0:
+            return 0
+        return min(100, (self.funding_current / self.funding_goal) * 100)
 
 
 class PollOption(models.Model):

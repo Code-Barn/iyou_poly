@@ -1,0 +1,342 @@
+{% load static %}
+{# Embeddable Polly Widget Template #}
+{# Usage: Include this template and pass poll object and theme #}
+
+<div class="polly-embed-container polly-theme-{{ theme|default:'light' }}"
+     data-embedding-app="{{ embedding_app }}"
+     data-poll-id="{{ poll.id }}"
+     data-user-did="{{ user_did }}"
+     hx-get="/api/embed/polls/{% if poll %}{{ poll.id }}{% endif %}/"
+     hx-trigger="load"
+     hx-vals='{"embedding_app": "{{ embedding_app }}", "user_did": "{{ user_did }}", "theme": "{{ theme|default:"light" }}"}'>
+
+    {% if poll %}
+    <div class="polly-poll-widget">
+        <div class="polly-poll-header">
+            <h3 class="polly-poll-title">{{ poll.title }}</h3>
+            {% if poll.is_proposal %}
+            <span class="polly-badge polly-badge-proposal">Proposal</span>
+            {% endif %}
+            {% if poll.poll_type == 'family_unit' %}
+            <span class="polly-badge polly-badge-family">Family</span>
+            {% elif poll.poll_type == 'family_scoped' %}
+            <span class="polly-badge polly-badge-scoped">Family-Scoped</span>
+            {% endif %}
+        </div>
+
+        {% if poll.description %}
+        <p class="polly-poll-description">{{ poll.description }}</p>
+        {% endif %}
+
+        {% if poll.is_proposal and poll.funding_goal %}
+        <div class="polly-funding-progress">
+            <div class="polly-funding-label">
+                <span>Funding Progress</span>
+                <span>{{ poll.funding_current|floatformat:0 }} / {{ poll.funding_goal|floatformat:0 }}</span>
+            </div>
+            <div class="polly-progress-bar">
+                <div class="polly-progress-fill" style="width: {{ poll.funding_progress|floatformat:0 }}%"></div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="polly-poll-options">
+            {% for option in poll.options %}
+            <div class="polly-poll-option">
+                <div class="polly-option-info">
+                    <span class="polly-option-text">{{ option.text }}</span>
+                    <span class="polly-option-votes">{{ option.votes }} votes</span>
+                </div>
+                {% if option.percentage > 0 %}
+                <div class="polly-option-bar">
+                    <div class="polly-option-fill" style="width: {{ option.percentage }}%"></div>
+                </div>
+                <span class="polly-option-percentage">{{ option.percentage|floatformat:1 }}%</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="polly-poll-meta">
+            <span class="polly-vote-count">{{ poll.total_votes }} total votes</span>
+            {% if poll.is_active_now %}
+            <span class="polly-status polly-status-active">Active</span>
+            {% else %}
+            <span class="polly-status polly-status-ended">Ended</span>
+            {% endif %}
+        </div>
+
+        {% if user_did and poll.is_active_now %}
+        <form class="polly-vote-form" hx-post="/api/polls/{{ poll.id }}/vote/" hx-vals='{"user_did": "{{ user_did }}"}'>
+            <div class="polly-vote-options">
+                {% for option in poll.options %}
+                <label class="polly-vote-label">
+                    <input type="radio" name="option_id" value="{{ option.id }}" required>
+                    <span>{{ option.text }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="polly-vote-button">Vote</button>
+        </form>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <div class="polly-loading">
+        <div class="polly-spinner"></div>
+        <span>Loading polls...</span>
+    </div>
+    {% endif %}
+
+    <div class="polly-powered-by">
+        <span>Powered by</span>
+        <a href="https://polly.example.com" target="_blank">Polly</a>
+    </div>
+</div>
+
+<style>
+.polly-embed-container {
+    --polly-primary: #3b82f6;
+    --polly-success: #22c55e;
+    --polly-warning: #f59e0b;
+    --polly-danger: #ef4444;
+    --polly-bg: #ffffff;
+    --polly-bg-secondary: #f9fafb;
+    --polly-text: #111827;
+    --polly-text-secondary: #6b7280;
+    --polly-border: #e5e7eb;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 400px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.polly-theme-dark .polly-embed-container {
+    --polly-bg: #1f2937;
+    --polly-bg-secondary: #374151;
+    --polly-text: #f9fafb;
+    --polly-text-secondary: #9ca3af;
+    --polly-border: #4b5563;
+}
+
+.polly-poll-widget {
+    padding: 16px;
+}
+
+.polly-poll-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.polly-poll-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--polly-text);
+    margin: 0;
+}
+
+.polly-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-weight: 500;
+}
+
+.polly-badge-proposal { background: #fef3c7; color: #92400e; }
+.polly-badge-family { background: #dbeafe; color: #1e40af; }
+.polly-badge-scoped { background: #e0e7ff; color: #3730a3; }
+
+.polly-poll-description {
+    color: var(--polly-text-secondary);
+    font-size: 14px;
+    margin: 0 0 16px;
+}
+
+.polly-funding-progress {
+    background: var(--polly-bg-secondary);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.polly-funding-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--polly-text-secondary);
+    margin-bottom: 8px;
+}
+
+.polly-progress-bar {
+    height: 8px;
+    background: var(--polly-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.polly-progress-fill {
+    height: 100%;
+    background: var(--polly-primary);
+    transition: width 0.3s ease;
+}
+
+.polly-poll-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.polly-poll-option {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--polly-bg-secondary);
+    border-radius: 8px;
+}
+
+.polly-option-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.pollu-option-text { font-size: 14px; color: var(--polly-text); }
+.polly-option-votes { font-size: 12px; color: var(--polly-text-secondary); }
+
+.polly-option-bar {
+    height: 6px;
+    width: 60px;
+    background: var(--polly-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.polly-option-fill {
+    height: 100%;
+    background: var(--polly-primary);
+}
+
+.polly-option-percentage {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--polly-text);
+    min-width: 40px;
+    text-align: right;
+}
+
+.polly-poll-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--polly-text-secondary);
+}
+
+.polly-status-active { color: var(--polly-success); }
+.polly-status-ended { color: var(--polly-danger); }
+
+.polly-vote-form {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--polly-border);
+}
+
+.polly-vote-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.polly-vote-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: var(--polly-bg-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.polly-vote-label:hover {
+    background: var(--polly-border);
+}
+
+.polly-vote-button {
+    width: 100%;
+    padding: 10px;
+    background: var(--polly-primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.polly-vote-button:hover { opacity: 0.9; }
+
+.polly-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    color: var(--polly-text-secondary);
+}
+
+.polly-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--polly-border);
+    border-top-color: var(--polly-primary);
+    border-radius: 50%;
+    animation: polly-spin 0.8s linear infinite;
+    margin-bottom: 8px;
+}
+
+@keyframes polly-spin {
+    to { transform: rotate(360deg); }
+}
+
+.polly-powered-by {
+    text-align: center;
+    font-size: 11px;
+    color: var(--polly-text-secondary);
+    padding: 8px;
+    border-top: 1px solid var(--polly-border);
+}
+
+.polly-powered-by a {
+    color: var(--polly-primary);
+    text-decoration: none;
+}
+</style>
+
+<script>
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.classList.contains('polly-embed-container')) {
+        // Re-initialize poll widget after content swap
+        initPollyWidget(evt.detail.target);
+    }
+});
+
+function initPollyWidget(container) {
+    // Handle vote form submissions
+    const voteForm = container.querySelector('.polly-vote-form');
+    if (voteForm) {
+        voteForm.addEventListener('htmx:beforeSwap', function(evt) {
+            if (evt.detail.failed) {
+                alert('Failed to cast vote. Please try again.');
+            }
+        });
+    }
+}
+</script>

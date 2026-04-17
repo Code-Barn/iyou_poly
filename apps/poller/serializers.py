@@ -33,11 +33,16 @@ class PollSerializer(serializers.ModelSerializer):
     )
     total_votes = serializers.IntegerField(read_only=True)
     is_expired = serializers.BooleanField(read_only=True)
+    is_active_now = serializers.BooleanField(read_only=True)
+    funding_progress = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Poll
         fields = [
             "id",
+            "poll_type",
+            "parent_poll",
+            "embedding_app",
             "title",
             "description",
             "created_by",
@@ -50,6 +55,13 @@ class PollSerializer(serializers.ModelSerializer):
             "min_issuer_trust_score",
             "require_multiple_issuers",
             "vote_weight",
+            "starts_at",
+            "ends_at",
+            "is_proposal",
+            "funding_goal",
+            "funding_current",
+            "funding_progress",
+            "funding_deadline",
             "ipfs_cid",
             "blockchain_anchor",
             "votes_merkle_root",
@@ -57,14 +69,15 @@ class PollSerializer(serializers.ModelSerializer):
             "options",
             "total_votes",
             "is_active",
+            "is_active_now",
             "is_expired",
-            "ends_at",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "id",
             "created_by",
+            "funding_current",
             "ipfs_cid",
             "blockchain_anchor",
             "votes_merkle_root",
@@ -93,6 +106,9 @@ class PollCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Poll
         fields = [
+            "poll_type",
+            "parent_poll",
+            "embedding_app",
             "title",
             "description",
             "required_scope_type",
@@ -100,8 +116,12 @@ class PollCreateSerializer(serializers.ModelSerializer):
             "required_credential_type",
             "min_issuer_trust_score",
             "require_multiple_issuers",
-            "options",
+            "starts_at",
             "ends_at",
+            "is_proposal",
+            "funding_goal",
+            "funding_deadline",
+            "options",
         ]
 
     def create(self, validated_data):

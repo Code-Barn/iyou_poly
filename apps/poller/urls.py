@@ -20,6 +20,7 @@ from apps.poller.views import (
     poll_list,
     vote_api,
 )
+from apps.poller.embed import EmbeddablePollWidget
 
 router = DefaultRouter()
 router.register(r"api/polls", PollViewSet, basename="poll")
@@ -53,6 +54,17 @@ urlpatterns = router.urls + [
         "api/polls/<int:poll_id>/eligibility/",
         CheckVotingEligibilityAPIView.as_view(),
         name="check_eligibility_api",
+    ),
+    # Embeddable Polly API
+    path(
+        "api/embed/polls/",
+        EmbeddablePollWidget.as_view(),
+        name="embed_polls",
+    ),
+    path(
+        "api/embed/polls/<int:poll_id>/",
+        EmbeddablePollWidget.as_view(),
+        name="embed_poll_detail",
     ),
     # Template Views
     path(

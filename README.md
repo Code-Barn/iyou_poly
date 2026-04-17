@@ -285,6 +285,119 @@ user = authenticate(request, did="did:key:example123456789")
 print(user)
 ```
 
+## Embeddable Polly Widget
+
+Polly can be embedded in external applications like Byers Brands LLC or Namechart.
+
+### API Endpoints
+
+```bash
+# Get polls for embedding (filtered by app + user credentials)
+GET /api/embed/polls/?embedding_app=byers-brands-llc&user_did=did:key:...
+
+# Get single poll for embedding
+GET /api/embed/polls/123/?embedding_app=byers-brands-llc&user_did=...
+```
+
+### Query Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `embedding_app` | External app identifier (e.g., 'byers-brands-llc') |
+| `user_did` | User's DID for credential-based filtering |
+| `scope` | Filter by scope value |
+| `theme` | 'light' or 'dark' |
+
+### Embed Template
+
+Include the widget in your HTML:
+
+```html
+{% load cactus_comments %}
+{% include "poller/partials/embed_widget.html" %}
+```
+
+## Family-Scoped Polling
+
+Polls support different visibility and authorization types:
+
+| Poll Type | Description |
+|-----------|-------------|
+| `public` | Visible to all users |
+| `family_unit` | Private polls for family members only (creator + authorized) |
+| `family_scoped` | Public within family scope, includes descendants |
+| `organization` | Organization-specific polls |
+
+### Creating Family Polls
+
+```python
+from apps.poller.models import Poll
+
+# Family-unit poll (private)
+poll = Poll.objects.create(
+    title="Family Vacation Vote",
+    poll_type=Poll.PollType.FAMILY_UNIT,
+    created_by=user,
+    ...
+)
+
+# Family-scoped poll
+poll = Poll.objects.create(
+    title="Family Reunion Location",
+    poll_type=Poll.PollType.FAMILY_SCOPED,
+    required_scope=family_scope,
+    parent_poll=parent_poll,  # Optional hierarchy
+    ...
+)
+```
+
+## Proposal & Funding Workflows
+
+Polls can be used as proposals with funding goals:
+
+### Create Proposal
+
+```python
+poll = Poll.objects.create(
+    title="Community Project",
+    is_proposal=True,
+    funding_goal=10000.00,
+    funding_deadline=datetime(2026, 12, 31),
+    ...
+)
+```
+
+### Fund Proposal
+
+```bash
+POST /api/polls/{poll_id}/fund/
+Content-Type: application/json
+
+{"amount": 500.00}
+```
+
+### Funding Progress
+
+The `funding_progress` property returns percentage (0-100).
+
+## Cactus Comments Integration
+
+Decentralized comments using Matrix network. Add to poll templates:
+
+```html
+{% load cactus_comments %}
+{% cactus_comments poll.id %}
+```
+
+Configuration (optional, defaults to public Cactus server):
+
+```python
+# settings.py
+CACTUS_HOMESERVER_URL = "https://matrix.cactus.chat:8448"
+CACTUS_SERVER_NAME = "cactus.chat"
+CACTUS_SITE_NAME = "your-site-name"
+```
+
 ## Known Issues
 
 1. **Federated Poll Versioning**: The `version` of `FederatedData` entries may be incremented multiple times during poll creation.

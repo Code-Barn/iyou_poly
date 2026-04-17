@@ -46,6 +46,13 @@
         <div id="vote-form-{{ poll.id }}">
             {% include "poller/partials/vote_combined.html" %}
         </div>
+
+        <!-- Cactus Comments Section -->
+        <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Discussion</h3>
+            {% load cactus_comments %}
+            {% cactus_comments poll.id %}
+        </div>
     </div>
 {% endblock %}
 

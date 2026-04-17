@@ -692,7 +692,7 @@ from .serializers import (
 
 class PollViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for managing Polls.
+    ViewSet for managing Polls with scope-aware filtering.
     """
 
     queryset = Poll.objects.all()
@@ -706,10 +706,90 @@ class PollViewSet(viewsets.ModelViewSet):
         return PollSerializer
 
     def get_queryset(self):
-        queryset = Poll.objects.all()
+        queryset = Poll.objects.all().select_related(
+            "required_scope_type", "required_scope", "required_credential_type"
+        ).prefetch_related("options")
+
+        # Filter by embedding app (for embedded Polly)
+        embedding_app = self.request.query_params.get("embedding_app")
+        if embedding_app:
+            queryset = queryset.filter(embedding_app=embedding_app)
+
+        # Filter by poll type
+        poll_type = self.request.query_params.get("poll_type")
+        if poll_type:
+            queryset = queryset.filter(poll_type=poll_type)
+
+        # Filter by parent poll (family hierarchy)
+        parent_id = self.request.query_params.get("parent_id")
+        if parent_id:
+            queryset = queryset.filter(parent_poll_id=parent_id)
+
+        # Filter by scope
+        scope_type = self.request.query_params.get("scope_type")
+        scope_value = self.request.query_params.get("scope_value")
+        if scope_type:
+            queryset = queryset.filter(required_scope_type__name=scope_type)
+        if scope_value:
+            queryset = queryset.filter(required_scope__value__icontains=scope_value)
+
+        # Filter by active status
         is_active = self.request.query_params.get("is_active")
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == "true")
+
+        # Filter to only show polls visible to the user based on their credentials
+        queryset = self._filter_by_user_credentials(queryset)
+
+        return queryset
+
+    def _filter_by_user_credentials(self, queryset):
+        """Filter polls based on user's credentials and scope."""
+        user = self.request.user
+        if not user.is_authenticated:
+            # For anonymous users, only show public polls
+            return queryset.filter(poll_type=Poll.PollType.PUBLIC)
+
+        # Get user's credentials and their scopes
+        from apps.core.models import VerifiableCredential
+
+        user_credentials = VerifiableCredential.objects.filter(
+            user=user, is_active=True
+        ).select_related("credential_type", "credential_type__scope_type")
+
+        if not user_credentials.exists():
+            # No credentials = only public polls
+            return queryset.filter(poll_type=Poll.PollType.PUBLIC)
+
+        # Build OR query for visible poll types
+        from django.db.models import Q
+
+        visible_types = [Poll.PollType.PUBLIC]
+
+        # Family-unit polls: user is the creator or has family credentials
+        visible_types.append(Poll.PollType.FAMILY_UNIT)
+
+        # Family-scoped: include polls from user's family/descendants
+        # Organization: include polls from user's organizations
+
+        # Filter by scopes matching user's credentials
+        user_scopes = []
+        for vc in user_credentials:
+            cred_data = vc.credential or {}
+            scope_value = cred_data.get("scope", {}).get("value")
+            if scope_value:
+                user_scopes.append(scope_value)
+
+        if user_scopes:
+            # Show polls requiring scopes that match user's credentials
+            queryset = queryset.filter(
+                Q(poll_type__in=visible_types) |
+                Q(required_scope__value__in=user_scopes) |
+                Q(required_scope__isnull=True)
+            )
+        else:
+            queryset = queryset.filter(poll_type__in=visible_types)
+
         return queryset
 
     @action(detail=True, methods=["get"])
@@ -718,6 +798,42 @@ class PollViewSet(viewsets.ModelViewSet):
         poll = self.get_object()
         serializer = PollResultsSerializer(poll)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def fund(self, request, pk=None):
+        """Add funding to a proposal poll."""
+        poll = self.get_object()
+        if not poll.is_proposal:
+            return Response(
+                {"error": "This poll is not a proposal"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        amount = request.data.get("amount")
+        if not amount:
+            return Response(
+                {"error": "Amount is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Invalid amount"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        poll.funding_current += amount
+        poll.save()
+
+        return Response({
+            "status": "success",
+            "funding_current": poll.funding_current,
+            "funding_progress": poll.funding_progress,
+        })
 
 
 class VoteViewSet(viewsets.ModelViewSet):
