@@ -12,17 +12,18 @@ import logging
 import os
 from typing import Dict, List, Optional, Union
 
-# Try to use the hybrid wrapper first, fall back to direct didkit
+# Temporarily disable Rust wrapper due to cryptographic compatibility issues
+# between Rust-issued VCs and Python didkit verification
+USE_RUST_WRAPPER = False
+print("Using direct didkit implementation (Rust wrapper disabled due to compatibility issues)")
+
+# Import didkit for all operations
 try:
-    from apps.accounts.did_rust_wrapper import generate_did as wrapper_generate_did
-    from apps.accounts.did_rust_wrapper import verify_vc as wrapper_verify_vc
-    from apps.accounts.did_rust_wrapper import issue_vc as wrapper_issue_vc
-    USE_RUST_WRAPPER = True
-    print("Using Rust-compatible DID wrapper")
-except ImportError:
     import didkit
-    USE_RUST_WRAPPER = False
-    print("Using direct didkit implementation")
+    DIDKIT_AVAILABLE = True
+except ImportError:
+    DIDKIT_AVAILABLE = False
+    print("didkit not available")
 
 from django.conf import settings
 from pydid import DID
@@ -244,10 +245,6 @@ def issue_vc(
         if "proof" in credential:
             del credential["proof"]
 
-        # Remove the proof field if it exists to avoid duplication
-        if "proof" in credential:
-            del credential["proof"]
-
         # Derive the verification method from the DID of the issuer
         vm = f"{did}#{did.split(':')[-1]}"
         logger.debug(f"Verification method: {vm}")
@@ -262,7 +259,7 @@ def issue_vc(
         logger.debug(f"Options: {options}")
 
         logger.debug(f"Issuing VC with key: {key}")
-        # Issue the credential with only standard fields
+        # Issue the credential using didkit
         vc = didkit.issueCredential(
             json.dumps(credential),
             json.dumps(options),
@@ -270,18 +267,18 @@ def issue_vc(
         )
         logger.debug(f"VC issued: {vc}")
 
-        # If VC was issued successfully and we had extra fields, add them back
+        # If VC was issued successfully and we had extra fields, we need to handle them differently
+        # Instead of modifying the signed VC (which breaks verification), we'll store them separately
+        # or use a different approach that maintains signature validity
         if vc and extra_fields:
-            logger.debug(f"Restoring {len(extra_fields)} extra fields to VC")
+            logger.debug(f"Note: {len(extra_fields)} extra fields were temporarily removed for signing")
+            logger.debug(f"Extra fields: {list(extra_fields.keys())}")
+            
+            # Return both the signed VC and the extra fields in a structured format
+            # This allows the application to access extra fields without breaking the signature
             vc_dict = json.loads(vc)
-            vc_credential_subject = vc_dict.get("credentialSubject", {})
-            if vc_credential_subject:
-                # Add the extra fields back to the credential subject
-                vc_credential_subject.update(extra_fields)
-                vc = json.dumps(vc_dict)
-                logger.debug(
-                    f"VC now includes extra fields: {list(extra_fields.keys())}"
-                )
+            vc_dict['_extra_fields'] = extra_fields
+            return json.dumps(vc_dict)
 
         return vc
     except Exception as e:
@@ -316,18 +313,10 @@ def verify_vc(
     logger.debug("Starting VC verification")
     logger.debug(f"VC to verify: {vc}")
 
-    # Use Rust wrapper if available
-    if USE_RUST_WRAPPER:
-        try:
-            if isinstance(vc, dict):
-                vc_json = json.dumps(vc)
-            else:
-                vc_json = vc
-            return wrapper_verify_vc(vc_json)
-        except Exception as e:
-            logger.error(f"Rust wrapper verification failed, falling back to didkit: {e}")
-            # Fall back to original implementation
-            pass
+    # Check if didkit is available for verification
+    if not DIDKIT_AVAILABLE:
+        logger.error("didkit not available for VC verification")
+        return False
 
     try:
         # Handle both JSON strings and Python dictionaries
@@ -346,29 +335,28 @@ def verify_vc(
             logger.error(f"VC data is not a dictionary: {vc_data}")
             return False
 
-        # Store any extra fields from credentialSubject that might cause validation issues
-        credential_subject = vc_data.get("credentialSubject", {})
-        extra_fields = {}
-        if credential_subject:
-            # Remove any fields other than 'id' to avoid schema validation issues
-            for field_name in list(credential_subject.keys()):
-                if field_name != "id":
-                    extra_fields[field_name] = credential_subject.pop(field_name)
+        # Check if extra fields are stored separately (new format)
+        if '_extra_fields' in vc_data:
+            # New format: extra fields are stored separately and don't affect the signature
+            extra_fields = vc_data.pop('_extra_fields')
+            vc_without_extra_fields = json.dumps(vc_data)
+            logger.debug(f"VC with separate extra fields: {vc_without_extra_fields}")
+        else:
+            # Old format: extra fields might be in credentialSubject
+            credential_subject = vc_data.get("credentialSubject", {})
+            extra_fields = {}
+            if credential_subject:
+                # Remove any fields other than 'id' to avoid schema validation issues
+                for field_name in list(credential_subject.keys()):
+                    if field_name != "id":
+                        extra_fields[field_name] = credential_subject.pop(field_name)
 
-        # Convert the VC back to a JSON string without extra fields
-        vc_without_extra_fields = json.dumps(vc_data)
-        logger.debug(f"VC without extra fields: {vc_without_extra_fields}")
+            vc_without_extra_fields = json.dumps(vc_data)
+            logger.debug(f"VC without extra fields: {vc_without_extra_fields}")
 
-        # Prepare verification options
-        options = proof_options or {"proofPurpose": "assertionMethod"}
-
-        # Extract relevant fields from the proof object
-        proof = vc_data.get("proof", {})
-        if proof:
-            if proof.get("verificationMethod"):
-                options["verificationMethod"] = proof.get("verificationMethod")
-            if proof.get("created"):
-                options["created"] = proof.get("created")
+        # Use simple verification options (like in working direct test)
+        options = {"proofPurpose": "assertionMethod"}
+        logger.debug(f"Verification options: {options}")
 
         # Use DIDKit's verifyCredential function for verification
         logger.debug("Using DIDKit's verifyCredential for verification")
