@@ -1,5 +1,9 @@
 # Rust DID Integration
 
+**Latest Update**: April 2026
+
+> **Upcoming**: Full Rust-DID integration is a priority for Q2 2026. The Python implementation will remain as a **backup** for environments without Rust toolchain.
+
 This document describes the Rust-based DID implementation in Polly.
 
 ## Overview
@@ -127,3 +131,26 @@ DID_BACKEND=rust python manage.py test
 2. **Security**: Memory-safe Rust code
 3. **Extensibility**: WASM bindings planned for web frontend
 4. **Compatibility**: Seamless fallback to Python
+
+## Upcoming Work (Q2 2026)
+
+Priority: Full Rust-DID integration for production use.
+
+### Goals
+- [ ] Resolve any remaining FFI issues
+- [ ] Add comprehensive test coverage for Rust backend
+- [ ] Performance optimization
+- [ ] WASM bindings for web-based DID operations
+- [ ] CI/CD integration with Rust toolchain
+
+### Python Backup
+The Python implementation remains available for:
+- Environments without Rust toolchain
+- CI/CD pipelines
+- Development on systems without Rust
+- Fallback when Rust library fails to load
+
+```python
+# Automatic fallback handled by did_rust_wrapper
+# No code changes needed - just don't set DID_BACKEND=rust
+```

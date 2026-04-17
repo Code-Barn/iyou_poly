@@ -1,198 +1,68 @@
 # Polly: Decentralized/Federated Identity and Polling Platform
 
-Polly is a decentralized/federated identity provider and federated database front-end. It aims to provide a foundation for building applications that leverage decentralized identity (DID) and verifiable credentials (VCs) while ensuring compatibility with federated identity systems.
+Polly is a decentralized/federated identity provider and polling platform. It provides DID-based authentication, Verifiable Credentials, scope-aware polling, and can be embedded in external applications.
+
+## Prerequisites
+- Python 3.13 or higher
+- Django 6.0+
+- SQLite (dev) or PostgreSQL (production)
 
 ## Features
 
-- **OpenID Connect (OIDC) Support**: Integrate with external identity providers like Google, GitHub, and more for seamless authentication.
-
-- **Decentralized Identity (DID) Support**: Manage DIDs, DID methods, and DID documents.
-- **Verifiable Credentials (VCs)**: Store, verify, manage, and share verifiable credentials with advanced features:
-  - Custom naming for credentials
-  - Tracking of when credentials were added
-  - In-place renaming of credentials
-  - Generation of new credentials with custom types
-  - Import of existing credentials
-  - Automatic migration of legacy credential formats
-- **Federated Identity Support**: Link multiple external identities to a single user.
-- **Custom Authentication**: Support for DID-based and federated authentication.
-- **Federated Database**: Synchronize data across multiple federated nodes with conflict resolution.
-- **Core API**: RESTful API endpoints for managing decentralized identity and federated data.
-- **Data Synchronization**: Automatically sync data across federated nodes with versioning and logging.
-
-## Roadmap
-
-### Phase 1: Standardization and Core Functionality
-- **Completed**:
-  - Implemented core models for decentralized identity (DIDs, DID documents, verifiable credentials).
-  - Implemented federated database models with synchronization and conflict resolution.
-  - Added RESTful API endpoints for managing decentralized identity and federated data.
-  - Implemented advanced verifiable credential management with:
-    - Custom naming and metadata
-    - Credential generation and import
-    - In-place renaming functionality
-    - Format migration for legacy credentials
-- **Next Steps**:
-  - Adopt W3C DID and VC standards.
-  - Enhance DID resolution and utilities.
-  - Implement federated identity providers (OAuth2, OpenID Connect, SAML).
-  - Improve verifiable credentials support.
-
-### Phase 2: Federated Database Support
-- **Completed**:
-  - Implemented federated database models with synchronization and conflict resolution.
-  - Added RESTful API endpoints for managing federated data.
-- **Next Steps**:
-  - Adopt Solid Protocol for federated databases.
-  - Enhance data synchronization and conflict resolution.
-  - Expand API endpoints for advanced federated data operations.
-
-### Phase 3: Extensibility and Compatibility
-- Design a plugin architecture for extending functionality.
-- Adopt semantic versioning and backward-compatible changes.
-- Implement testing and CI/CD pipelines.
-
-### Phase 3: Polling Functionality
-- Research and design a decentralized polling system.
-- Implement models and views for managing polls.
-- Add support for geographical layers (local, state, national, global).
-- Integrate polling functionality with the federated database.
-
-## Rust DID Implementation
-
-Polly uses a hybrid Python/Rust DID implementation for high-performance operations:
-
-```bash
-# Use Rust backend (recommended)
-DID_BACKEND=rust python manage.py runserver
-```
-
-See [docs/RUST_DID_INTEGRATION.md](docs/RUST_DID_INTEGRATION.md) for details.
-
-## Verifiable Credential Management
-
-Polly provides a comprehensive interface for managing verifiable credentials:
-
-### Key Features
-
-1. **Custom Naming**: Assign meaningful names to credentials for easy identification
-2. **Added Date Tracking**: See when each credential was added to your wallet
-3. **In-Place Renaming**: Rename credentials at any time without re-importing
-4. **Credential Generation**: Create new credentials with custom types and attributes
-5. **Credential Import**: Import existing credentials from JSON files
-6. **Format Migration**: Automatic conversion of legacy credential formats
-
-### Using the VC Management Interface
-
-1. **Access the VC Management Page**: Click "Credentials" in the navigation bar
-2. **Generate a New Credential**: Click "Generate Credential" and provide a name and type
-3. **Import a Credential**: Click "Import Credential" and paste the JSON data
-4. **Rename a Credential**: Click the "Rename" button next to any credential
-5. **Download a Credential**: Click "Download" to save a credential as a JSON file
-
-### Technical Implementation
-
-- Credentials are stored with metadata including name and added date
-- The system automatically migrates legacy credentials to the new format
-- All operations are performed through secure, authenticated endpoints
-- Credentials can be filtered by type (e.g., authentication vs. other credentials)
-
-### Phase 4: Front-End Development
-- Design and implement a user-friendly front-end.
-- Integrate with the RESTful API for decentralized identity, federated data, and polling.
-- Develop interfaces for user management, data synchronization, and polling.
+- **Decentralized Identity (DID) Support**: Manage DIDs (did:key, did:ethr, did:web, did:ion), DID methods, and DID documents.
+- **DID-Based Authentication**: Passwordless login using Verifiable Credentials (VCs).
+- **OpenID Connect (OIDC) Support**: Integrate with Google, GitHub, and other OAuth2 providers.
+- **Verifiable Credentials (VCs)**: Issue, store, verify, and manage credentials.
+- **Hybrid Authentication**: Combine DID, traditional, and OIDC auth.
+- **Scope-Based Voting**: Credential-aware polls with scope requirements.
+- **Family-Scoped Polling**: Family-unit, family-scoped, and organization polls.
+- **Proposal & Funding**: Polls with funding goals and progress tracking.
+- **Embeddable Widget**: Integrate polls into external apps.
+- **Federated Database**: Sync data across nodes with conflict resolution.
+- **Cactus Comments**: Decentralized discussions via Matrix.
+- **RESTful API**: Full API for identity, credentials, polls, and federation.
 
 ## Getting Started
 
-### OIDC Configuration
-To enable OIDC authentication, add the following configuration to your `settings.py`:
-
-```python
-# settings.py
-AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',
-    'social_core.backends.google.GoogleOAuth2',
-    'social_core.backends.github.GithubOAuth2',
-    'apps.accounts.backends.HybridAuthBackend',
-]
-
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = 'your-google-oauth2-key'
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = 'your-google-oauth2-secret'
-
-SOCIAL_AUTH_GITHUB_KEY = 'your-github-key'
-SOCIAL_AUTH_GITHUB_SECRET = 'your-github-secret'
-```
-
-### Prerequisites
-- Python 3.13 or higher
-- Django 6.0 or higher
-- SQLite (for development)
-
-### Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/polly.git
-   cd polly
+   git clone https://github.com/Code-Barn/polly-django.git
+   cd polly-django
    ```
 
-2. Set up a virtual environment:
+2. Install dependencies (using uv recommended):
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
+   uv sync
    ```
 
-3. Install dependencies:
+3. Run migrations:
    ```bash
-   pip install -e .
+   uv run python manage.py migrate
    ```
 
-4. Run migrations:
+4. Create initial scopes:
    ```bash
-   python manage.py migrate
+   uv run python manage.py create_geographical_scopes
    ```
 
-5. Create initial geographical scopes:
+5. Start the server:
    ```bash
-   python manage.py create_geographical_scopes
+   uv run python manage.py runserver
    ```
 
-6. Start the development server:
-   ```bash
-   python manage.py runserver
-   ```
+6. Access: Admin at `http://localhost:8000/admin/` | API at `http://localhost:8000/api/`
 
-7. Access the admin interface at `http://localhost:8000/admin/` and the API at `http://localhost:8000/api/`.
+## Roadmap
 
-## Installation
+### Phase 1: Core Identity & Credentials - ✅ COMPLETE
+### Phase 2: Polling System - ✅ COMPLETE
+### Phase 3: Embeddable & Federation - ✅ COMPLETE
 
-1. Clone the repository:
-   
-   git clone https://github.com/your-username/polly.git
-   cd polly
-   
-2. Set up a virtual environment:
-
-  python -m venv .venv
-  source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
-
-3. Install dependencies:
-  
-  pip install -e .
-
-4. Run migrations: 
-
-  python manage.py migrate
-
-5. Start the development server:
-  ```bash
-  python manage.py runserver
-  ```
-
-## Running Tests
-To run the test suite:
-```bash
-python manage.py test
-```
+### Phase 4: Next Steps
+- [ ] IPFS integration for immutable storage
+- [ ] Blockchain anchoring for votes
+- [ ] WebSocket real-time federation
+- [ ] Mobile/PWA frontend
 
 ## Front-End Development
 Polly now includes a front-end built with Django Templates and HTMX for dynamic interactions. Here’s what’s available:
@@ -249,15 +119,23 @@ Users can authenticate using external providers like Google or GitHub. The login
 
 #### Poll API
 - **GET `/api/polls/`**: Retrieve all active polls.
-- **GET `/api/polls/?geographical_scope=<scope>`**: Filter polls by geographical scope.
+- **GET `/api/polls/?embedding_app=<app>`**: Filter by embedding app.
+- **GET `/api/polls/?poll_type=family_unit`**: Filter by poll type.
+- **GET `/api/polls/?scope_type=organization&scope_value=Acme`**: Filter by scope.
 - **GET `/api/polls/<poll_id>/`**: Retrieve a specific poll.
-- **POST `/api/polls/`**: Create a new poll (authenticated users only).
-- **PUT `/api/polls/<poll_id>/`**: Update a poll (authenticated users only).
-- **DELETE `/api/polls/<poll_id>/`**: Delete a poll (authenticated users only).
+- **POST `/api/polls/`**: Create a new poll.
+- **PUT `/api/polls/<poll_id>/`**: Update a poll.
+- **DELETE `/api/polls/<poll_id>/`**: Delete a poll.
+- **POST `/api/polls/<poll_id>/fund/`: Add funding to a proposal.
 
 #### Vote API
-- **POST `/api/polls/<poll_id>/votes/`**: Cast a vote in a poll (authenticated users only).
-- **GET `/api/polls/<poll_id>/votes/detail/`**: Retrieve all votes for a poll.
+- **POST `/api/polls/<poll_id>/vote/`**: Cast a vote.
+- **POST `/api/polls/<poll_id>/cast/`**: Cast vote (DRF endpoint).
+- **GET `/api/polls/<poll_id>/eligibility/`**: Check voting eligibility.
+
+#### Embed API
+- **GET `/api/embed/polls/`**: Get polls for embedding (filtered by user credentials).
+- **GET `/api/embed/polls/<poll_id>/`**: Get single poll for embedding.
 
 ### DID Utilities
 ```python

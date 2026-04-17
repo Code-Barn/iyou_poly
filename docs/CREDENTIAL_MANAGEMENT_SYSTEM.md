@@ -1,6 +1,10 @@
 # Credential Management System - Design & Implementation
 
-## 📋 Overview
+**Latest Update**: April 2026
+
+> **Note**: Polly uses DIDKit (Rust) as the primary DID/VC implementation, with a Python fallback for environments without Rust. Full Rust-DID integration coming Q2 2026.
+
+## Overview
 
 This document describes the credential management system implemented in Polly and DID_auth, including the separation of Authentication Credentials from Other Credentials, best practices, and future enhancements.
 

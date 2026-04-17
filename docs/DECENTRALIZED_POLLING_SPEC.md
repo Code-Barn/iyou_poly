@@ -1,5 +1,9 @@
 # Polly Decentralized Polling - Technical Specification
 
+**Latest Update**: April 2026
+
+> **Note**: Polly now supports additional poll types: `family_unit`, `family_scoped`, `organization`. See [README.md](../README.md) and [VOTING_FUNCTIONALITY.md](./VOTING_FUNCTIONALITY.md) for the latest features.
+
 ## Project Overview
 
 Polly is a decentralized, immutable polling application that enables distributed consensus determination through cryptographically-verified voting. The system uses Decentralized Identifiers (DIDs) for identity, Verifiable Credentials (VCs) for authorization, and IPFS + blockchain anchoring for data integrity.

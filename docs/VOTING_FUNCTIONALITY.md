@@ -1,144 +1,126 @@
-```# Voting Functionality Implementation
+# Voting Functionality Implementation
 
-## 🗳️ Overview
+## Overview
 
-This document describes the voting functionality implementation in the Polly application. The voting system allows users to create polls, cast votes, and view results in a decentralized manner.
+This document describes the voting functionality in Polly, a decentralized polling platform with credential-based authorization, family-scoped polls, and embeddable widgets.
 
-## ✅ Features
+## Features
 
-### 1. **Poll Creation**
-- Users can create polls with a title, description, and multiple options
-- Duplicate options are automatically detected and removed
-- Polls are associated with a geographical scope
+### 1. Poll Creation
+- Users create polls with title, description, and multiple options
+- Duplicate options are automatically detected
+- Poll types: `public`, `family_unit`, `family_scoped`, `organization`
+- Scope-based voting requirements (credential type, scope type, scope value)
+- Trust requirements (min issuer trust score, multiple issuers)
+- Scheduled polls with `starts_at` and `ends_at` times
+- Proposal mode with funding goal and deadline
 
-### 2. **Voting**
-- Authenticated users can cast votes on active polls
-- Each user can vote only once per poll
-- Votes are recorded with the user, poll, and selected option
-- Vote counts are updated in real-time
+### 2. Voting
+- Authenticated users (or DID-based) can cast votes on active polls
+- One vote per user/DID per poll
+- Vote verification with cryptographic signatures
+- Credential-based eligibility checking
+- Real-time vote count updates via HTMX
 
-### 3. **Results Display**
-- Vote results are displayed with visual progress bars
-- Percentage calculations show relative popularity of options
-- Total vote count is displayed
-- User's vote is highlighted in the UI
+### 3. Results Display
+- Visual progress bars with percentages
+- Total vote count displayed
+- User's vote highlighted in UI
+- Funding progress for proposals
 
-## 🔧 Implementation Details
+### 4. Embeddable Polls
+- Filter polls by embedding app and user credentials
+- API endpoints for external app integration
+- Theme support (light/dark)
 
-### Data Models
+## Data Models
 
-#### `Poll` Model
-- `title`: The poll question/title
-- `description`: Detailed description of the poll
-- `created_by`: User who created the poll
-- `geographical_scope`: The geographical reach of the poll
-- `is_active`: Whether the poll is active for voting
-- `created_at`/`updated_at`: Timestamps
+### Poll Model
+```python
+- title, description
+- poll_type: public|family_unit|family_scoped|organization
+- parent_poll: for hierarchy
+- embedding_app: external app identifier
+- required_scope_type, required_scope, required_credential_type
+- min_issuer_trust_score, require_multiple_issuers
+- starts_at, ends_at: timing
+- is_proposal, funding_goal, funding_current, funding_deadline
+- ipfs_cid, blockchain_anchor, votes_merkle_root
+```
 
-#### `PollOption` Model
-- `poll`: ForeignKey to the Poll
-- `text`: The option text
-- `votes`: PositiveIntegerField counting votes (denormalized for performance)
-- `created_at`/`updated_at`: Timestamps
+### PollOption Model
+```python
+- poll: ForeignKey
+- text: option text
+- votes: denormalized count
+```
 
-#### `Vote` Model
-- `poll`: ForeignKey to the Poll
-- `option`: ForeignKey to the PollOption
-- `user`: ForeignKey to the User who cast the vote
-- `created_at`: Timestamp of when the vote was cast
+### Vote Model
+```python
+- poll, option: ForeignKeys
+- user: optional (for authenticated)
+- voter_did: DID-based voting
+- signature, credential_cid, credential_proof: cryptographic verification
+- weight: vote weight
+- ipfs_cid, blockchain_tx: decentralized storage
+- is_verified, verification_details
+```
 
-### Views
+## API Endpoints
 
-#### `vote_api` View
-- Handles vote submission via HTMX
-- Validates user authentication
-- Checks for duplicate votes
-- Creates the Vote record
-- Updates the PollOption.votes count
-- Returns updated UI with vote confirmation and results
+### Poll CRUD
+- `GET /api/polls/` - List polls (with filters: embedding_app, poll_type, scope)
+- `POST /api/polls/` - Create poll
+- `GET /api/polls/<id>/` - Get poll
+- `PUT /api/polls/<id>/` - Update poll
+- `DELETE /api/polls/<id>/` - Delete poll
+- `GET /api/polls/<id>/results/` - Get poll results
 
-#### `poll_detail` View
-- Displays the poll details
-- Shows vote form for users who haven't voted
-- Shows vote confirmation and results for users who have voted
-- Uses the `vote_combined.html` partial template
+### Voting
+- `POST /api/polls/<id>/vote/` - Cast vote (HTMX)
+- `POST /api/polls/<id>/cast/` - Cast vote (REST)
+- `GET /api/polls/<id>/eligibility/` - Check if user can vote
+- `POST /api/polls/<id>/fund/` - Add funding to proposal
 
-### Templates
+### Embed
+- `GET /api/embed/polls/` - Get polls for embedding
+- `GET /api/embed/polls/<id>/` - Get single poll for embedding
 
-#### `vote_combined.html`
-- Combined template for vote form and results
-- Shows radio buttons for option selection
-- Shows "Vote" button for each option
-- After voting, shows confirmation message
-- Displays results with progress bars and vote counts
+## Key Properties
 
-#### `poll_detail.html`
-- Main poll detail page
-- Includes the `vote_combined.html` partial template
-- Shows poll title, description, and metadata
+```python
+# Check poll timing
+poll.is_expired  # Has ended
+poll.is_active_now  # Within start/end times
 
-### Key Fixes
+# Proposal funding
+poll.funding_progress  # Percentage (0-100)
+```
 
-#### Vote Counting
-- Fixed issue where vote counts weren't displaying correctly
-- Updated templates to use `option.vote_options.count` instead of `option.votes`
-- Ensured vote counts are updated in real-time after voting
+## Templates
 
-#### Duplicate Results
-- Fixed issue with duplicate results sections
-- Created combined template to ensure consistent rendering
-- Updated HTMX targets to update the correct elements
+### vote_combined.html
+- Combined vote form and results
+- Radio buttons for options
+- Vote button per option
+- Results with progress bars
 
-#### UI Alignment
-- Fixed alignment of radio buttons and vote buttons
-- Improved visual hierarchy and spacing
-- Ensured consistent styling across all states
+### poll_detail.html
+- Poll title, description, scope badges
+- Vote form/results
+- Cactus Comments integration
 
-## 🧪 Testing
+## Testing
 
-The voting functionality should be tested with the following scenarios:
+1. **Poll Creation**: Valid options, duplicates, insufficient options
+2. **Voting**: Authenticated, unauthenticated, duplicate votes, invalid options
+3. **Results**: Vote counts, percentages, user vote highlight
+4. **Edge Cases**: Inactive poll, invalid IDs, scope eligibility
+5. **Embed**: Filter by app, filter by user credentials
 
-1. **Poll Creation**
-   - Create poll with valid options
-   - Create poll with duplicate options
-   - Create poll with insufficient options
+## Maintenance Notes
 
-2. **Voting**
-   - Cast vote as authenticated user
-   - Attempt to vote as unauthenticated user
-   - Attempt to vote twice in the same poll
-   - Attempt to vote with invalid option ID
-
-3. **Results Display**
-   - Verify vote counts are displayed correctly
-   - Verify percentages are calculated correctly
-   - Verify user's vote is highlighted
-   - Verify results update after voting
-
-4. **Edge Cases**
-   - Vote on inactive poll
-   - Vote with invalid poll ID
-   - Vote with invalid option ID
-
-## 📝 Maintenance Notes
-
-1. **Template Structure**
-   - The `vote_combined.html` template contains both the vote form and results
-   - This ensures consistent rendering and avoids duplicate results sections
-   - When making changes to the voting UI, update this template
-
-2. **Vote Counting**
-   - Vote counts are stored in two places:
-     - `Vote` model records individual votes
-     - `PollOption.votes` field stores denormalized count
-   - Both must be updated when a vote is cast
-
-3. **HTMX Integration**
-   - The voting functionality uses HTMX for dynamic updates
-   - Ensure HTMX attributes (`hx-post`, `hx-target`, `hx-swap`) are correctly set
-   - Test HTMX responses after making changes
-
-4. **Authentication**
-   - Voting requires authentication
-   - Ensure authentication checks are in place in the `vote_api` view
-   - Test voting as both authenticated and unauthenticated users
+1. Vote counts stored in both `Vote` model and `PollOption.votes` (denormalized)
+2. HTMX for dynamic updates - ensure hx-post, hx-target are correct
+3. Voting requires authentication or DID
+4. Scope eligibility checked via `CheckVotingEligibilityAPIView`

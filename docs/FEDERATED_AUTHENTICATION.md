@@ -1,5 +1,9 @@
 # Federated Authentication
 
+**Latest Update**: April 2026
+
+> **Note**: DID-based auth uses DIDKit (Rust) as primary, Python as backup. See [RUST_DID_INTEGRATION.md](./RUST_DID_INTEGRATION.md).
+
 ## Overview
 
 Polly supports **federated authentication**, allowing users to authenticate using:

@@ -1,208 +1,151 @@
 # AI Prompt Guide for Polly Project
 
-This document serves as a **living guide** for AI-assisted development in the Polly project. It outlines the **scope, lessons learned, best practices, and future roadmap** to ensure efficient and consistent collaboration.
+This document serves as a **living guide** for AI-assisted development in the Polly project.
 
 ---
 
-## **1. Project Overview**
-### **1.1. Project Goals**
-Polly is a **decentralized/federated identity provider and polling platform** with the following goals:
-- **Decentralized Identity (DID)**: Support for DIDs, DID methods, and DID documents.
-- **Verifiable Credentials (VCs)**: Store, verify, and revoke VCs for authentication and authorization.
-- **Federated Identity**: Link multiple external identities (e.g., OAuth2, OpenID Connect, SAML) to a single user.
-- **Federated Database**: Synchronize data across multiple nodes with conflict resolution.
-- **Polling System**: Enable decentralized polling with support for geographical scopes.
+## 1. Project Overview
 
-### **1.2. Architecture**
-Polly follows a **modular architecture** with the following components:
-- **Backend**: Django (Python) for API and business logic.
-- **Frontend**: Django Templates + HTMX for dynamic interactions.
-- **Database**: SQLite (development) / PostgreSQL (production).
-- **Identity**: DIDKit for DID/VC operations, custom authentication backends.
-- **Federation**: Custom models and signals for data synchronization.
+### 1.1 Project Goals
 
-### **1.3. Key Features**
-| Feature                     | Description                                                                                     |
-|-----------------------------|-------------------------------------------------------------------------------------------------|
-| **DID-Based Authentication** | Users can log in using their DID and Verifiable Credentials (VCs).                            |
-| **VC Management**           | Users can view, issue, and verify VCs.                                                          |
-| **Federated Identity**      | Support for OAuth2, OpenID Connect, and SAML providers.                                         |
-| **Federated Database**      | Synchronize data across nodes with versioning and conflict resolution.                         |
-| **Polling System**          | Create, vote on, and view polls with geographical scopes.                                       |
-| **Theming**                 | Support for light/dark mode and custom themes.                                                 |
+Polly is a **decentralized/federated identity provider and polling platform**:
 
----
+- **Decentralized Identity (DID)**: Support for DIDs (did:key, did:ethr, did:web, did:ion)
+- **Verifiable Credentials (VCs)**: Issue, store, verify, and manage credentials
+- **Hybrid Authentication**: DID-based + username/password + OAuth2/OIDC
+- **Scope-Based Polling**: Credential-aware polls with family-unit/family-scoped support
+- **Embeddable Widgets**: Integrate polls into external apps (Byers Brands, Namechart)
+- **Federated Database**: Sync data across nodes with conflict resolution
+- **Decentralized Comments**: Cactus Comments via Matrix network
 
-## **2. Lessons Learned**
-### **2.1. Today’s Insights**
-1. **DID/VC Integration**:
-   - DIDKit is a powerful tool for DID/VC operations but requires careful handling of keys and proofs.
-   - Always validate DIDs and VCs before using them in authentication flows.
-   - Store private keys securely (e.g., encrypted in the database).
+### 1.2 Architecture
 
-2. **Database Migrations**:
-   - Always create and apply migrations when adding or modifying model fields.
-   - Test migrations in a staging environment before deploying to production.
+| Component | Technology |
+|-----------|------------|
+| Backend | Django 6.0 + DRF |
+| Frontend | Django Templates + HTMX |
+| Database | SQLite (dev) / PostgreSQL (prod) |
+| DID/VC | **DIDKit (Rust)** - primary, Python fallback |
+| Theming | Tailwind CSS |
 
-3. **Template Organization**:
-   - Use a **consistent template hierarchy** (e.g., `partials/`, `registration/`) for reusability.
-   - Document template usage in `templates/README.md`.
+### 1.3 DID/VC Implementation
 
-4. **Authentication Flows**:
-   - Ensure all authentication backends (e.g., DID, username/password) are thoroughly tested.
-   - Provide clear error messages for failed authentication attempts.
+**IMPORTANT**: Polly uses a hybrid Python/Rust implementation:
 
-5. **Frontend Debugging**:
-   - Use **HTMX dev tools** and **browser console** to debug dynamic interactions.
-   - Add `console.log` statements to verify data flow.
+```bash
+# Rust backend (recommended, faster)
+DID_BACKEND=rust python manage.py runserver
 
-### **2.2. Common Pitfalls**
-| Pitfall                          | Solution                                                                                       |
-|----------------------------------|------------------------------------------------------------------------------------------------|
-| **Missing Migrations**           | Always run `makemigrations` and `migrate` after model changes.                                |
-| **Template Syntax Errors**       | Use Django’s template debugger and validate syntax before deployment.                        |
-| **Authentication Failures**      | Test all authentication backends (DID, username/password) and provide clear error messages.  |
-| **DID/VC Verification Failures** | Validate DIDs and VCs before using them in authentication flows.                             |
-| **HTMX Request Failures**        | Ensure CSRF tokens are included in HTMX requests and verify network requests in dev tools.   |
+# Python fallback (slower but reliable)
+python manage.py runserver
+```
+
+The Rust DID implementation via DIDKit provides:
+- Faster DID generation and VC issuance
+- Full W3C compliance
+- Cryptographic verification
+
+The Python fallback remains as a **backup** for scenarios where Rust is unavailable (e.g., CI/CD environments, systems without Rust toolchain).
+
+**Upcoming**: Full Rust-DID integration is a priority for Q2 2026. The Python implementation will remain as backup.
+
+### 1.4 Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **DID-Based Auth** | Passwordless login using Verifiable Credentials |
+| **Hybrid Auth** | Combine DID, username/password, OAuth2 |
+| **VC Management** | Generate, import, rename, verify VCs |
+| **Trust Scoring** | Issuer reputation system (0.0-1.0) |
+| **Poll Types** | public, family_unit, family_scoped, organization |
+| **Proposal/Funding** | Polls with funding goals and progress |
+| **Embed API** | Scope-aware API for external apps |
+| **Cactus Comments** | Decentralized discussions via Matrix |
 
 ---
 
-## **3. Best Practices**
-### **3.1. Coding Standards**
-1. **Python**:
-   - Follow [PEP 8](https://peps.python.org/pep-0008/) for Python code.
-   - Use type hints (`typing` module) for better code clarity.
-   - Document functions and classes with docstrings.
+## 2. Lessons Learned
 
-2. **Django**:
-   - Use Django’s built-in features (e.g., `auth`, `messages`, `staticfiles`) where possible.
-   - Keep business logic in **views** and **services**, not in templates or models.
-   - Use `django-debug-toolbar` for debugging SQL queries and performance.
+### 2.1 DID/VC Operations
+- DIDKit (Rust) is faster but requires proper installation
+- Always have Python fallback for environments without Rust
+- Validate DIDs and VCs before using in auth flows
+- Store private keys securely
 
-3. **Frontend**:
-   - Use **Tailwind CSS** for styling and **HTMX** for dynamic interactions.
-   - Follow **accessibility best practices** (e.g., ARIA labels, semantic HTML).
-   - Use **CSS variables** for theming (e.g., `--primary-color`).
+### 2.2 Database Migrations
+- Run `makemigrations` and `migrate` after model changes
+- Test migrations in staging before production
 
-4. **DID/VC**:
-   - Use **DIDKit** for DID/VC operations (e.g., `generate_did`, `issue_vc`, `verify_vc`).
-   - Store private keys securely (e.g., encrypted in the database).
-   - Validate DIDs and VCs before using them in authentication flows.
+### 2.3 HTMX Debugging
+- Use browser dev tools to debug HTMX requests
+- Ensure CSRF tokens are included in requests
 
-### **3.2. Tools and Workflows**
-| Tool               | Purpose                                                                                     |
-|--------------------|---------------------------------------------------------------------------------------------|
-| **DIDKit**         | DID/VC operations (generation, resolution, signing, verification).                         |
-| **HTMX**           | Dynamic frontend interactions without full page reloads.                                   |
-| **Tailwind CSS**   | Styling and theming.                                                                        |
-| **Django Debug Toolbar** | Debug SQL queries, templates, and performance.                                      |
-| **Playwright**     | End-to-end testing for frontend interactions.                                              |
-| **Git**            | Version control and collaboration.                                                          |
-| **GitHub Actions** | CI/CD for automated testing and deployment.                                                |
-
-### **3.3. Testing Strategy**
-1. **Unit Tests**:
-   - Test models, forms, and utility functions in isolation.
-   - Use Django’s `TestCase` for database-related tests.
-
-2. **Integration Tests**:
-   - Test interactions between components (e.g., views and templates).
-   - Use `django.test.Client` for HTTP request/response testing.
-
-3. **End-to-End Tests**:
-   - Use **Playwright** to test frontend interactions (e.g., voting, authentication).
-   - Test all authentication flows (DID, username/password).
-
-4. **Accessibility Tests**:
-   - Use tools like [axe](https://www.deque.com/axe/) to validate accessibility.
-   - Ensure keyboard navigability and ARIA compliance.
+### 2.4 Scope System
+- ScopeType and Scope models enable flexible authorization
+- Poll filtering uses user credentials + required scope match
 
 ---
 
-## **4. Future Roadmap**
-### **4.1. Phase 5: Federated Identity Integration**
-1. **DID-Based Authentication**:
-   - Test and refine DID/VC login flows.
-   - Add support for multiple DID methods (e.g., `did:web`).
+## 3. Best Practices
 
-2. **Federated Identity Providers**:
-   - Integrate OAuth2, OpenID Connect, and SAML providers.
-   - Allow users to link external identities to their account.
+### 3.1 Python
+- Follow PEP 8
+- Use type hints
+- Document with docstrings
 
-3. **VC Management UI**:
-   - Add a UI for users to view, issue, and verify VCs.
-   - Support for revoking VCs.
+### 3.2 Django
+- Use built-in auth, messages, staticfiles
+- Keep business logic in views/services
+- Use `select_related` and `prefetch_related` for queries
 
-### **4.2. Phase 6: Federated Database Enhancements**
-1. **Real-Time Synchronization**:
-   - Use WebSockets or Server-Sent Events (SSE) for real-time updates.
-   - Improve conflict resolution for federated data.
+### 3.3 DID/VC
+- Use `apps/accounts/utils/did_utils.py` utilities
+- Default to Rust backend, fallback to Python
+- Test both backends when making DID changes
 
-2. **Offline Support**:
-   - Add support for offline-first functionality with local data storage.
-   - Sync data when the user comes back online.
-
-### **4.3. Phase 7: UI/UX Improvements**
-1. **Responsive Design**:
-   - Ensure the frontend works well on mobile devices.
-   - Test across different screen sizes and browsers.
-
-2. **Theming**:
-   - Add support for custom themes (e.g., dark mode, high contrast).
-   - Allow users to switch themes dynamically.
-
-3. **Accessibility**:
-   - Improve ARIA labels, keyboard navigation, and screen reader support.
-   - Conduct accessibility audits using tools like axe.
-
-### **4.4. Phase 8: Deployment and Scaling**
-1. **Docker**:
-   - Create a `Dockerfile` and `docker-compose.yml` for containerized deployment.
-   - Support for multiple environments (development, staging, production).
-
-2. **CI/CD**:
-   - Set up GitHub Actions or GitLab CI for automated testing and deployment.
-   - Automate database migrations and static file collection.
-
-3. **Scaling**:
-   - Optimize database queries and caching for performance.
-   - Use a production-ready WSGI server (e.g., Gunicorn) and ASGI server (e.g., Daphne).
+### 3.4 Testing
+- Unit tests for models/utils
+- Integration tests for views
+- E2E tests with Playwright for critical flows
 
 ---
 
-## **5. How to Use This Guide**
-### **5.1. For AI-Assisted Development**
-1. **Scope Clarity**:
-   - Always refer to the **Project Overview** to understand the goals and architecture.
-   - Use the **Key Features** section to identify relevant components.
+## 4. Project Structure
 
-2. **Lessons Learned**:
-   - Review the **Lessons Learned** section to avoid common pitfalls.
-   - Apply **Best Practices** to ensure code quality and consistency.
-
-3. **Future Roadmap**:
-   - Use the **Future Roadmap** to plan and prioritize tasks.
-   - Align new features with the project’s long-term vision.
-
-### **5.2. For Human Developers**
-1. **Onboarding**:
-   - Use this guide to onboard new team members.
-   - Provide context on the project’s goals, architecture, and best practices.
-
-2. **Documentation**:
-   - Update this guide as the project evolves.
-   - Add new lessons learned and best practices.
-
-3. **Collaboration**:
-   - Use this guide to align with AI-assisted development efforts.
-   - Provide feedback and refinements to improve future iterations.
+```
+polly/
+├── apps/
+│   ├── accounts/       # User auth, DIDs, credentials
+│   ├── core/          # DID/VC models, scopes, federation
+│   └── poller/        # Polls, votes, embed widget
+├── config/            # Django settings
+├── docs/              # Documentation
+│   └── archive/       # Historical docs
+└── manage.py
+```
 
 ---
 
-## **6. Resources**
+## 5. Current Roadmap
+
+### Completed
+- Phase 1: Core Identity & Credentials
+- Phase 2: Polling System (family-scoped, proposals)
+- Phase 3: Embeddable & Federation
+
+### In Progress / Next
+- Full Rust-DID integration (priority)
+- IPFS for immutable storage
+- Blockchain anchoring for votes
+
+---
+
+## 6. Resources
+
 - [Django Documentation](https://docs.djangoproject.com/)
-- [DIDKit Documentation](https://github.com/spruceid/didkit)
-- [HTMX Documentation](https://htmx.org/docs/)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-- [W3C DID Core Specification](https://www.w3.org/TR/did-core/)
-- [W3C Verifiable Credentials Data Model](https://www.w3.org/TR/vc-data-model/)
+- [DIDKit](https://github.com/spruceid/didkit)
+- [HTMX](https://htmx.org/docs/)
+- [Tailwind CSS](https://tailwindcss.com/docs)
+- [W3C DID Core](https://www.w3.org/TR/did-core/)
+- [W3C VC Data Model](https://www.w3.org/TR/vc-data-model/)
+- [Cactus Comments](https://cactus.chat/docs/)
