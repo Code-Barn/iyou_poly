@@ -62,7 +62,7 @@ SECRET_KEY = "django-insecure-krg5-y#ck3o%elpl_nwsv1!+a+g6b0g&3pa%7kx=)yh47ylh_#
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["testserver", "localhost", "100.64.0.4"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 
 # Application definition
@@ -178,10 +178,10 @@ OIDC_RP_CLIENT_ID = "polly-django"
 OIDC_RP_CLIENT_SECRET = "polly-secret" # In production this would be in .env
 OIDC_RP_SIGN_ALGO = "RS256"
 
-OIDC_OP_AUTHORIZATION_ENDPOINT = "http://100.64.0.4:8000/authorize"
-OIDC_OP_TOKEN_ENDPOINT = "http://100.64.0.4:8000/token"
-OIDC_OP_USER_ENDPOINT = "http://100.64.0.4:8000/userinfo"
-OIDC_OP_JWKS_ENDPOINT = "http://100.64.0.4:8000/jwks"
+OIDC_OP_AUTHORIZATION_ENDPOINT = "http://localhost:8000/authorize"
+OIDC_OP_TOKEN_ENDPOINT = "http://localhost:8000/token"
+OIDC_OP_USER_ENDPOINT = "http://localhost:8000/userinfo"
+OIDC_OP_JWKS_ENDPOINT = "http://localhost:8000/jwks"
 
 # Treat sub claim as DID
 OIDC_USERNAME_ALGO = "apps.accounts.utils.did_utils.generate_username_from_sub"
