@@ -4,6 +4,44 @@
 
 This document provides a comprehensive technical overview of the Polly decentralized polling platform to guide future development decisions.
 
+### Polly Protocol Spec v1 Implementation
+
+The current implementation fully supports **Polly Protocol Spec v1** with the following key features:
+
+#### **Merkle Root Anchoring**
+
+- **Implementation**: The `anchor_ledger` management command calculates Merkle roots from vote signatures
+- **Usage**: `python manage.py anchor_ledger`
+- **Process**:
+  1. Retrieves last 100 votes from database
+  2. Extracts cryptographic signatures from signed votes
+  3. Calculates SHA-256 Merkle root using `apps/poller/utils/merkle.py`
+  4. Outputs Merkle root for ledger anchoring
+- **Storage**: Merkle root stored in `Poll.votes_merkle_root` field
+
+#### **Signature-Strict Voting**
+
+- **Requirement**: All votes must include cryptographic signatures
+- **Implementation**: 
+  - `Vote.signature` field stores cryptographic signatures
+  - API endpoints use the internal `did_rust` library for signature generation
+  - Votes without signatures are rejected by the system
+- **Verification**: Votes are marked as verified with `is_verified=True` flag
+
+#### **Cryptographic Voting Flow**
+
+1. **User Authentication**: OIDC-based authentication with DID mapping via `iyou_idp`
+2. **Vote Casting**: 
+   - Client sends vote data with DID
+   - Server generates cryptographic signature using the internal `did_rust` library
+   - Vote stored with signature in database
+3. **Ledger Anchoring**: 
+   - Periodic Merkle root calculation from signatures via `anchor_ledger` command
+   - Merkle root published to IPFS/Blossom for public verification
+4. **Verification**: 
+   - Users can verify votes by recalculating Merkle roots
+   - "Verify on Desktop" mechanism exports signed vote history for local verification via `iyou_home`
+
 ## Current Implementation Status
 
 ### Core Architecture
