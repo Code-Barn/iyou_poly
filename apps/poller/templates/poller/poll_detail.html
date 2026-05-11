@@ -8,7 +8,12 @@
 
 {% block content %}
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6" role="main" aria-labelledby="poll-title">
-        <h2 id="poll-title" class="text-2xl font-bold text-gray-900 dark:text-white mb-2">{{ poll.title }}</h2>
+        <h2 id="poll-title" class="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+            {{ poll.title }}
+            {% if poll.vote_power_rule != "1:1" %}
+                <span class="text-xl cursor-help" title="Custom voting power: {{ poll.vote_power_rule }} ({{ poll.vote_power_ratio }}x multiplier)">⚙️</span>
+            {% endif %}
+        </h2>
         <p class="text-gray-600 dark:text-gray-400 mb-4">{{ poll.description }}</p>
 
         <!-- Poll Scope Display -->
@@ -109,7 +114,7 @@
                 }
             }
         });
-        
+
         // Theme toggle setup
         function setupThemeToggle() {
             var btn = document.getElementById('theme-toggle');
@@ -119,7 +124,7 @@
                     var isDark = document.documentElement.classList.contains('dark');
                     var darkIcon = document.getElementById('theme-toggle-dark-icon');
                     var lightIcon = document.getElementById('theme-toggle-light-icon');
-                    
+
                     if (isDark) {
                         document.documentElement.classList.remove('dark');
                         localStorage.setItem('color-theme', 'light');

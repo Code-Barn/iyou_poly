@@ -800,6 +800,21 @@ wheels = [
 ]
 
 [[package]]
+name = "mozilla-django-oidc"
+version = "5.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "django" },
+    { name = "pyjwt" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/5e/d5906dc016253d248eabf3608a6bbfd0df75a993a467cf7cf0a0c7f2b18a/mozilla_django_oidc-5.0.2.tar.gz", hash = "sha256:4e953dcd963c036daaa2ac42b5bb6ea89a1c6ea7be0387c2022a59aca2f83043", size = 57360, upload-time = "2025-12-19T16:11:40.685Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/a9/c1664acf30ef0031ed06650039de1693bddf4cf7f58e07939e1aa80bffb7/mozilla_django_oidc-5.0.2-py3-none-any.whl", hash = "sha256:965a3533b0e299288cdf38ec2f8b550217c302ffe78ce5bd0b2d2f4bc436878b", size = 25910, upload-time = "2025-12-19T16:11:39.729Z" },
+]
+
+[[package]]
 name = "multidict"
 version = "6.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -948,6 +963,7 @@ dependencies = [
     { name = "django-debug-toolbar" },
     { name = "django-environ" },
     { name = "djangorestframework" },
+    { name = "mozilla-django-oidc" },
     { name = "playwright" },
     { name = "pydid" },
     { name = "pytest" },
@@ -968,6 +984,7 @@ requires-dist = [
     { name = "django-debug-toolbar", specifier = ">=6.1.0" },
     { name = "django-environ", specifier = ">=0.12.0" },
     { name = "djangorestframework", specifier = ">=3.16.1" },
+    { name = "mozilla-django-oidc", specifier = ">=5.0.2" },
     { name = "playwright", specifier = ">=1.57.0" },
     { name = "pydid", specifier = ">=0.1.0" },
     { name = "pytest", specifier = ">=9.0.2" },

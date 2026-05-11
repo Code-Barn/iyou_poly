@@ -80,7 +80,7 @@
             try {
                 const response = evt.detail.xhr.responseText;
                 const xhr = evt.detail.xhr;
-                
+
                 // Check for authentication error (401)
                 if (xhr.status === 401) {
                     const data = JSON.parse(response);
@@ -96,7 +96,7 @@
                     forms.forEach(form => form.remove());
                     return;
                 }
-                
+
                 // Try to parse as JSON for credential errors
                 const data = JSON.parse(response);
                 if (data.status === 'error' && data.requires_credential) {
@@ -134,7 +134,7 @@
             }
         }
     });
-    
+
     // Handle HTMX error responses
     document.addEventListener('htmx:responseError', function(evt) {
         if (evt.detail.target && evt.detail.target.id === 'vote-form-{{ poll.id }}') {
@@ -164,8 +164,23 @@
                 <button onclick="setResultFormat('{{ poll.id }}', 'vertical')" id="fmt-vertical-{{ poll.id }}" class="px-3 py-1 text-xs rounded-md bg-gray-200 dark:bg-gray-600 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none">Vertical</button>
             </div>
         </div>
-        
+
         {% if total_votes > 0 %}
+            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                <button
+                    onclick="copyPollHistory('{{ poll.id }}')"
+                    class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-white rounded-md hover:bg-gray-200 dark:hover:bg-gray-500 transition-colors text-sm font-medium"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                    </svg>
+                    Verify on Desktop
+                </button>
+                <div id="copy-success-{{ poll.id }}" class="hidden text-xs text-green-600 dark:text-green-400 mt-1 text-center font-medium">
+                    Poll history copied to clipboard!
+                </div>
+            </div>
+
             <!-- Bars Format (default) -->
             <div id="results-bars-{{ poll.id }}" class="result-format">
                 <div class="space-y-3">
@@ -185,7 +200,7 @@
                     {% endfor %}
                 </div>
             </div>
-            
+
             <!-- Pie Chart Format -->
             <div id="results-pie-{{ poll.id }}" class="result-format hidden">
                 <div class="flex justify-center">
@@ -202,7 +217,7 @@
                     {% endfor %}
                 </div>
             </div>
-            
+
             <!-- Vertical Bar Format -->
             <div id="results-vertical-{{ poll.id }}" class="result-format hidden">
                 <div class="flex items-end justify-center gap-2 h-40">
@@ -222,7 +237,7 @@
                     {% endfor %}
                 </div>
             </div>
-            
+
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">
                 Total votes: {{ total_votes }}
             </p>
@@ -231,35 +246,35 @@
         {% endif %}
     </div>
     {% endwith %}
-    
+
     <script>
         function setResultFormat(pollId, format) {
             // Hide all formats
             document.querySelectorAll('.result-format').forEach(el => el.classList.add('hidden'));
             document.querySelectorAll('[id^="fmt-"]').forEach(el => el.classList.remove('bg-blue-500', 'text-white'));
             document.querySelectorAll('[id^="fmt-"]').forEach(el => el.classList.add('bg-gray-200'));
-            
+
             // Show selected format
             document.getElementById('results-' + format + '-' + pollId).classList.remove('hidden');
             document.getElementById('fmt-' + format + '-' + pollId).classList.remove('bg-gray-200');
             document.getElementById('fmt-' + format + '-' + pollId).classList.add('bg-blue-500', 'text-white');
-            
+
             // Update pie chart dynamically
             if (format === 'pie') {
                 updatePieChart(pollId);
             }
-            
+
             // Save preference
             localStorage.setItem('pollResultFormat', format);
         }
-        
+
         function updatePieChart(pollId) {
             const pieChart = document.getElementById('pie-chart-' + pollId);
             if (!pieChart) return;
-            
+
             const colors = ['#ef4444', '#eab308', '#3b82f6', '#22c55e'];
             const legendItems = pieChart.parentElement.parentElement.querySelectorAll('[data-vote-count]');
-            
+
             let total = 0;
             const counts = [];
             legendItems.forEach(item => {
@@ -267,15 +282,15 @@
                 counts.push(count);
                 total += count;
             });
-            
+
             if (total === 0) {
                 pieChart.style.background = '#e5e7eb';
                 return;
             }
-            
+
             let gradient = '';
             let currentAngle = 0;
-            
+
             for (let i = 0; i < counts.length; i++) {
                 if (counts[i] > 0) {
                     const angle = (counts[i] / total) * 360;
@@ -286,9 +301,9 @@
                     currentAngle += angle;
                 }
             }
-            
+
             pieChart.style.background = 'conic-gradient(' + gradient + ')';
-            
+
             // Update legend colors
             const legendColors = pieChart.parentElement.parentElement.querySelectorAll('.pie-color-0, .pie-color-1, .pie-color-2, .pie-color-3');
             legendColors.forEach((el, idx) => {
@@ -297,11 +312,36 @@
                 }
             });
         }
-        
+
         // Set default format on load
         document.addEventListener('DOMContentLoaded', function() {
             const savedFormat = localStorage.getItem('pollResultFormat') || 'bars';
             setResultFormat('{{ poll.id }}', savedFormat);
         });
+
+        async function copyPollHistory(pollId) {
+            try {
+                const response = await fetch(`/api/polls/${pollId}/history/`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    const jsonStr = JSON.stringify(data, null, 2);
+                    await navigator.clipboard.writeText(jsonStr);
+
+                    const successMsg = document.getElementById(`copy-success-${pollId}`);
+                    if (successMsg) {
+                        successMsg.classList.remove('hidden');
+                        setTimeout(() => {
+                            successMsg.classList.add('hidden');
+                        }, 3000);
+                    }
+                } else {
+                    alert('Failed to fetch poll history: ' + (data.message || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Error copying poll history:', err);
+                alert('Error copying poll history. See console for details.');
+            }
+        }
     </script>
 </div>

@@ -19,6 +19,7 @@ from apps.poller.views import (
     poll_detail_api,
     poll_list,
     vote_api,
+    get_votes,
 )
 from apps.poller.embed import EmbeddablePollWidget
 
@@ -43,6 +44,11 @@ urlpatterns = router.urls + [
         "api/polls/<int:poll_id>/vote/",
         vote_api,
         name="vote_api",
+    ),
+    path(
+        "api/polls/<int:poll_id>/history/",
+        get_votes,
+        name="poll_history_api",
     ),
     # DRF voting endpoints
     path(

@@ -89,119 +89,31 @@ class DIDAuthBackend(ModelBackend):
         return None
 
 
-class OIDCAuthBackend:
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+
+class OIDCAuthBackend(OIDCAuthenticationBackend):
     """
     Authentication backend for OIDC providers.
-
-    This backend handles authentication via OIDC providers like Google and GitHub.
-    It works in conjunction with social-auth-app-django.
+    Maps the 'sub' claim (DID) to the username and user's DID field.
     """
 
-    def authenticate(self, request, **kwargs):
-        """
-        Authenticate a user using OIDC.
+    def create_user(self, claims):
+        user = super().create_user(claims)
+        user.did = claims.get("sub")
+        # Ensure we have a DID key if not already present
+        if not user.did_key:
+             import didkit
+             user.did_key = didkit.generateEd25519Key()
+             user.did_method = "key"
+        user.save()
+        return user
 
-        This method is called by social-auth-app-django after successful
-        OIDC authentication to find or create the user.
-
-        Args:
-            request: The request object
-            **kwargs: Additional authentication parameters
-
-        Returns:
-            User: The authenticated user, or None if authentication fails
-        """
-        User = get_user_model()
-
-        # Get the social user from the strategy
-        social = kwargs.get("social")
-        if not social:
-            return None
-
-        # Try to get an existing user by email first
-        email = social.extra_data.get("email")
-        if email:
-            try:
-                return User.objects.get(email=email)
-            except User.DoesNotExist:
-                pass
-
-        # Try to get user by username (for providers that don't provide email)
-        username = social.extra_data.get("username") or social.extra_data.get("login")
-        if username:
-            try:
-                return User.objects.get(username=username)
-            except User.DoesNotExist:
-                pass
-
-        # Create a new user if auto-provisioning is enabled
-        if getattr(settings, "AUTO_PROVISION_OIDC_USERS", True):
-            return self._create_oidc_user(social)
-
-        return None
-
-    def _create_oidc_user(self, social):
-        """
-        Create a new user from OIDC authentication data.
-
-        Args:
-            social: The social auth user object
-
-        Returns:
-            User: The newly created user
-        """
-        User = get_user_model()
-
-        # Extract user data from the social auth response
-        email = social.extra_data.get("email") or f"{social.uid}@oidc.example.com"
-        username = (
-            social.extra_data.get("username")
-            or social.extra_data.get("login")
-            or f"oidc_{social.uid[:20]}"
-        )
-        first_name = social.extra_data.get("first_name", "")
-        last_name = social.extra_data.get("last_name", "")
-
-        # Create the user
-        user = User.objects.create_user(
-            username=username, email=email, first_name=first_name, last_name=last_name
-        )
-
-        # Generate a DID for the user to enable federated identity
-        from apps.accounts.utils.did_utils import generate_did
-
-        user.did = generate_did(method="key")
-        user.did_method = "key"
-        key = json.loads(didkit.generateEd25519Key())
-        user.did_key = json.dumps(key)
-
-        # Issue an authentication VC for the user
-        credential = {
-            "@context": ["https://www.w3.org/2018/credentials/v1"],
-            "type": ["VerifiableCredential", "AuthenticationCredential"],
-            "issuer": user.did,
-            "issuanceDate": "2023-01-01T00:00:00Z",
-            "credentialSubject": {"id": user.did, "name": username, "email": email},
-        }
-        from apps.accounts.utils.did_utils import issue_vc
-
-        vc = issue_vc(credential, user.did, user.did_key)
-        if vc:
-            user.add_vc(json.loads(vc))
-
+    def update_user(self, user, claims):
+        user.did = claims.get("sub")
         user.save()
         return user
 
     def get_user(self, user_id):
-        """
-        Get a user by ID.
-
-        Args:
-            user_id: The user ID
-
-        Returns:
-            User: The user object or None if not found
-        """
         User = get_user_model()
         try:
             return User.objects.get(pk=user_id)

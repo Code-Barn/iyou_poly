@@ -79,7 +79,7 @@ INSTALLED_APPS = [
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.poller.apps.PollerConfig",
-    "social_django",
+    "mozilla_django_oidc",
 ]
 
 MIDDLEWARE = [
@@ -91,6 +91,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "mozilla_django_oidc.middleware.SessionRefresh",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -143,11 +144,8 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 AUTHENTICATION_BACKENDS = [
-    "django.contrib.auth.backends.ModelBackend",
     "apps.accounts.backends.DIDAuthBackend",
     "apps.accounts.backends.OIDCAuthBackend",
-    "social_core.backends.google.GoogleOAuth2",
-    "social_core.backends.github.GithubOAuth2",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -175,38 +173,18 @@ STATICFILES_DIRS = [BASE_DIR / "apps" / "core" / "static"]
 LOGIN_REDIRECT_URL = "poll_list"
 LOGOUT_REDIRECT_URL = "poll_list"
 
-# Social Auth / OIDC Configuration
-SOCIAL_AUTH_JSONFIELD_ENABLED = True
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = "your-google-client-id"
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = "your-google-client-secret"
-SOCIAL_AUTH_GITHUB_KEY = "your-github-client-id"
-SOCIAL_AUTH_GITHUB_SECRET = "your-github-client-secret"
-
 # OIDC Settings
-SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
-    "openid",
-    "email",
-    "profile",
-]
+OIDC_RP_CLIENT_ID = "polly-django"
+OIDC_RP_CLIENT_SECRET = "polly-secret" # In production this would be in .env
+OIDC_RP_SIGN_ALGO = "RS256"
 
-SOCIAL_AUTH_GITHUB_SCOPE = [
-    "read:user",
-    "user:email",
-]
+OIDC_OP_AUTHORIZATION_ENDPOINT = "http://100.64.0.4:8000/authorize"
+OIDC_OP_TOKEN_ENDPOINT = "http://100.64.0.4:8000/token"
+OIDC_OP_USER_ENDPOINT = "http://100.64.0.4:8000/userinfo"
+OIDC_OP_JWKS_ENDPOINT = "http://100.64.0.4:8000/jwks"
 
-# Custom pipeline for user creation and linking
-SOCIAL_AUTH_PIPELINE = (
-    "social_core.pipeline.social_auth.social_details",
-    "social_core.pipeline.social_auth.social_uid",
-    "social_core.pipeline.social_auth.auth_allowed",
-    "social_core.pipeline.social_auth.social_user",
-    "social_core.pipeline.user.get_username",
-    "social_core.pipeline.user.create_user",
-    "apps.accounts.pipeline.save_federated_identity",
-    "social_core.pipeline.social_auth.associate_user",
-    "social_core.pipeline.social_auth.load_extra_data",
-    "social_core.pipeline.user.user_details",
-)
+# Treat sub claim as DID
+OIDC_USERNAME_ALGO = "apps.accounts.utils.did_utils.generate_username_from_sub"
 
 # Federated Identity and Trust Management
 # https://docs.djangoproject.com/en/6.0/topics/auth/customizing/

@@ -37,48 +37,13 @@ urlpatterns = [
     path("", include("apps.core.urls")),
     path("", include("apps.poller.urls")),
     path("__debug__/", include("debug_toolbar.urls")),  # Django Debug Toolbar
-    path(
-        "login/",
-        auth_views.LoginView.as_view(template_name="registration/login.html"),
-        name="login",
-    ),
+    path("oidc/", include("mozilla_django_oidc.urls")),
+    path("login/", include("mozilla_django_oidc.urls")), # Override login with OIDC
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
-    path("register/", RegisterView.as_view(), name="register"),
     path(
         "login/did/",
         DIDLoginView.as_view(),
         name="did_login",
     ),
-    path(
-        "accounts/vcs/",
-        VCManagementView.as_view(),
-        name="vc_management",
-    ),
-    path(
-        "accounts/generate_did_and_vc/",
-        GenerateDIDAndVCView.as_view(),
-        name="generate_did_and_vc",
-    ),
-    path(
-        "accounts/generate_credential/",
-        GenerateCredentialView.as_view(),
-        name="generate_credential",
-    ),
-    path(
-        "accounts/import_credential/",
-        ImportCredentialView.as_view(),
-        name="import_credential",
-    ),
-    path(
-        "accounts/update_vc_name/",
-        UpdateVCNameView.as_view(),
-        name="update_vc_name",
-    ),
-    path(
-        "accounts/delete_credential/",
-        DeleteCredentialView.as_view(),
-        name="delete_credential",
-    ),
-    # Social auth URLs for OIDC
-    path("social-auth/", include("social_django.urls", namespace="social")),
+
 ]

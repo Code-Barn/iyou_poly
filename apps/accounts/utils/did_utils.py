@@ -48,7 +48,7 @@ def generate_did(method: str = "key", key_type: str = "Ed25519") -> str:
     if USE_RUST_WRAPPER:
         # Use the wrapper which handles both Python and Rust backends
         return wrapper_generate_did(method)
-    
+
     # Original didkit implementation
     if method == "key":
         if key_type == "Ed25519":
@@ -273,7 +273,7 @@ def issue_vc(
         if vc and extra_fields:
             logger.debug(f"Note: {len(extra_fields)} extra fields were temporarily removed for signing")
             logger.debug(f"Extra fields: {list(extra_fields.keys())}")
-            
+
             # Return both the signed VC and the extra fields in a structured format
             # This allows the application to access extra fields without breaking the signature
             vc_dict = json.loads(vc)
@@ -578,3 +578,13 @@ def verify_federated_vc(
         return False
 
     return True
+
+
+def generate_username_from_sub(sub):
+    """
+    Generate a Django-compatible username from an OIDC sub claim.
+    DIDs contain colons which are not allowed in default Django usernames.
+    """
+    import re
+    # Replace non-alphanumeric characters with underscores
+    return re.sub(r'[^a-zA-Z0-9@.+-_]', '_', sub)

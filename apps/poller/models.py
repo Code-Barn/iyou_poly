@@ -104,10 +104,15 @@ class Poll(models.Model):
         help_text=_("Require credentials from multiple issuers."),
     )
 
-    # Vote weight (always 1:1 for this app)
-    vote_weight = models.PositiveIntegerField(
-        default=1,
-        help_text=_("Vote weight per voter. Always 1 for equal voting."),
+    # Vote power and rules
+    vote_power_rule = models.CharField(
+        max_length=50,
+        default="1:1",
+        help_text=_("The rule defining voting power calculation (e.g., '1:1', 'investor_share')."),
+    )
+    vote_power_ratio = models.FloatField(
+        default=1.0,
+        help_text=_("The multiplier for voting power if using a custom rule."),
     )
 
     # Timing for scheduled polls

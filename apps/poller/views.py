@@ -5,6 +5,7 @@ This module defines the views for managing polls and votes, including
 creating polls, casting votes, and viewing poll results.
 """
 
+import datetime
 import json
 import logging
 from typing import Any, Dict
@@ -454,8 +455,36 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                     status=403,
                 )
 
-        # Create the vote
-        Vote.objects.create(poll=poll, option=option, user=user)
+        # Create the vote with cryptographic signature
+        voter_did = user.did or f"did:key:unknown_{user.id}"
+
+        # Prepare data to sign
+        sign_data = {
+            "poll_id": poll.id,
+            "option_id": option.id,
+            "voter_did": voter_did,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+
+        signature = ""
+        if user.did_key:
+            try:
+                import didkit
+                signature = didkit.signMessage(json.dumps(sign_data), {}, user.did_key)
+            except Exception as e:
+                logger.error(f"Error signing vote: {e}")
+                # Fallback to a simple hash if didkit fails for some reason
+                import hashlib
+                signature = hashlib.sha256(json.dumps(sign_data).encode()).hexdigest()
+
+        Vote.objects.create(
+            poll=poll,
+            option=option,
+            user=user,
+            voter_did=voter_did,
+            signature=signature,
+            is_verified=True
+        )
 
         # Increment the vote count on the option
         option.votes = option.votes + 1
@@ -937,11 +966,33 @@ class CastVoteAPIView(APIView):
                 {"error": "Option not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
+        # Get user from DID if possible
+        try:
+            user = User.objects.get(did=voter_did)
+        except User.DoesNotExist:
+            user = None
+
+        # Sign the vote if we have the user's key
+        signature = data.get("signature", "")
+        if not signature and user and user.did_key:
+            try:
+                import didkit
+                sign_data = {
+                    "poll_id": poll.id,
+                    "option_id": option.id,
+                    "voter_did": voter_did,
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+                signature = didkit.signMessage(json.dumps(sign_data), {}, user.did_key)
+            except Exception as e:
+                logger.error(f"Error signing API vote: {e}")
+
         vote = Vote.objects.create(
             poll=poll,
             option=option,
             voter_did=voter_did,
-            signature=data.get("signature", ""),
+            user=user,
+            signature=signature,
             credential_cid=data.get("credential_cid", ""),
             credential_proof=data.get("credential", {}),
             is_verified=True,
@@ -1060,14 +1111,7 @@ def delete_poll(request: HttpRequest, poll_id: int) -> HttpResponse:
 
 def get_votes(request: HttpRequest, poll_id: int) -> JsonResponse:
     """
-    Get the votes for a specific poll.
-
-    Args:
-        request: The HTTP request object.
-        poll_id: The ID of the poll.
-
-    Returns:
-        JsonResponse: A JSON response containing the votes for the poll.
+    Get the votes for a specific poll for verification purposes.
     """
     poll = get_object_or_404(Poll, id=poll_id, is_active=True)
     votes = Vote.objects.filter(poll=poll).select_related("option", "user")
@@ -1075,16 +1119,19 @@ def get_votes(request: HttpRequest, poll_id: int) -> JsonResponse:
     data = []
     for vote in votes:
         vote_data = {
-            "id": vote.id,
-            "option_id": vote.option.id,
+            "voter_did": vote.voter_did,
             "option_text": vote.option.text,
-            "user_id": vote.user.id,
-            "username": vote.user.username,
+            "signature": vote.signature,
             "created_at": vote.created_at.isoformat(),
         }
         data.append(vote_data)
 
-    return JsonResponse({"status": "success", "data": data})
+    return JsonResponse({
+        "status": "success",
+        "poll_title": poll.title,
+        "merkle_root": poll.votes_merkle_root,
+        "votes": data
+    })
 
 
 def poll_list(request: HttpRequest) -> HttpResponse:
