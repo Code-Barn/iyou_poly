@@ -2,6 +2,8 @@
 
 **Objective**: Define the rules, cryptographic guarantees, and transparency mechanisms for the Omni-Social verifiable polling system.
 
+**Role in Omni-Social Meta-Protocol**: Polly serves as the **Governance Layer** within the Omni-Stack, providing cryptographically verifiable polling and auditing capabilities that integrate with the broader ecosystem.
+
 
 ## 🛡️ 1. Authentication & Identity
 
@@ -14,6 +16,8 @@
 - **Primary Identifier**: The OIDC `sub` claim must contain the user's full DID string (e.g., `did:key:z6Mk...`).
 
 - **Sovereignty**: Legacy password-based authentication is strictly disabled. Identity is proven by the holder's ability to sign a UUID challenge.
+
+- **Omni-Social Integration**: Supports both **Managed (Level 1)** and **Sovereign (Level 2)** participation modes as defined in the Omni-Social Meta-Protocol.
 
 ## 📜 2. The Cryptographic Ledger
 
@@ -31,9 +35,11 @@
 
 - **Storage**:
 
-  - **Local**: Metadata is stored in Django (Postgres/SQLite).
+  - **Local**: Metadata is stored in Django (Postgres/SQLite) for high-speed indexing and discovery.
 
-  - **Global**: Finalized ledgers and Merkle roots are published to **IPFS/Blossom** for public auditing.
+  - **Global**: Finalized ledgers and Merkle roots are published to **Blossom (BUD-01)** for public auditing, with **IPFS** providing long-term redundancy.
+
+- **Omni-Social Compliance**: Follows the Omni-Social storage mandate where Postgres is used for indexing only, while primary data is content-addressed via Blossom/IPFS.
 
 ## ⚙️ 3. Voting Power & Transparency
 
@@ -51,11 +57,13 @@
 
 ## 🛰️ 4. Federation & The Omni-Social Mesh
 
-- **Cross-Instance Polls**: Polly supports **ActivityPub** for federating polls across different instances.
+- **Cross-Instance Polls**: Polly supports **Nostr** for federating polls across different instances, replacing ActivityPub as per Omni-Social strategic directive.
 
-- **Shared Audits**: Federated instances must publish their vote ledgers to a shared network (IPFS) to allow for cross-instance verification.
+- **Shared Audits**: Federated instances must publish their vote ledgers to **Nostr relays** and **Blossom/IPFS** to allow for cross-instance verification.
 
 - **Global Scoping**: Global-scoped polls are aggregated by the `iyou\_wun` satellite app, while local-scoped polls remain within regional instances.
+
+- **Nostr Integration**: Poll events and results can be broadcast as Nostr events for ecosystem-wide distribution.
 
 ## 🔌 5. API & Integration
 
@@ -79,4 +87,35 @@
 - **Anti-Tampering**: Any modification to a vote signature will invalidate the Merkle root, triggering automated system alerts.
 
 - **Sovereign Audit**: Users do not need to "trust" the Polly server; they can recalculate the Merkle root on their own machine to verify the integrity of the poll.
+
+
+## 🌐 7. Omni-Social Meta-Protocol Integration
+
+### Role in the Omni-Stack
+
+Polly occupies the **Governance Layer** within the Omni-Social Meta-Protocol stack:
+
+| **Layer** | **Protocol / Tool** | **Polly's Role** |
+| - | - | - |
+| **Identity** | **DID (`did_rust`)** | Uses DID for voter authentication and signature verification |
+| **Messaging** | **Nostr** | Broadcasts poll events and results as Nostr events |
+| **Real-time** | **XMPP (Prosody)** | Not directly used by Polly |
+| **Storage** | **Blossom (BUD-01)** | Publishes Merkle roots and ledgers to Blossom/IPFS |
+| **Governance** | **Polly** | Provides verifiable polling and auditing capabilities |
+
+### Sovereign Spectrum Compliance
+
+- **Managed Mode (Level 1)**: Polly supports cloud-based key management via `iyou_idp` for easier onboarding
+- **Sovereign Mode (Level 2)**: Polly integrates with `iyou_home` via the Local WebSocket Bridge for local key signing
+
+### Data Standardization
+
+- **JSON Envelopes**: All Polly API responses follow the Omni-Social standard: `{"valid": bool, "error": "...", "details": {}}`
+- **Sync to Home**: Polly provides "Sync to Home" functionality to push vote history to local `iyou_home` instances
+
+### Strategic Alignment
+
+- **Protocolized Opining**: Every Omni-Social ecosystem project must support Polly Protocol for governance
+- **Verifiable Proofs**: Polly's cryptographic signatures integrate with the broader Omni-Social verification framework
+- **Scoped Transparency**: Polly polls can be filtered by geographical or social scope as defined in user's verified identity
 

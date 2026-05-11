@@ -6,7 +6,15 @@ This document provides a comprehensive technical overview of the Polly decentral
 
 ### Polly Protocol Spec v1 Implementation
 
-The current implementation fully supports **Polly Protocol Spec v1** with the following key features:
+The current implementation fully supports **Polly Protocol Spec v1** within the **Omni-Social Meta-Protocol** framework with the following key features:
+
+#### **Omni-Stack Integration**
+
+Polly serves as the **Governance Layer** in the Omni-Stack:
+- **Identity Layer**: Uses `did_rust` for DID-based authentication
+- **Messaging Layer**: Integrates with Nostr for poll event distribution
+- **Storage Layer**: Publishes to Blossom/IPFS for content-addressed storage
+- **Governance Layer**: Provides verifiable polling and auditing
 
 #### **Merkle Root Anchoring**
 
@@ -37,10 +45,30 @@ The current implementation fully supports **Polly Protocol Spec v1** with the fo
    - Vote stored with signature in database
 3. **Ledger Anchoring**: 
    - Periodic Merkle root calculation from signatures via `anchor_ledger` command
-   - Merkle root published to IPFS/Blossom for public verification
+   - Merkle root published to Blossom (BUD-01) for public verification, with IPFS providing long-term redundancy
 4. **Verification**: 
    - Users can verify votes by recalculating Merkle roots
    - "Verify on Desktop" mechanism exports signed vote history for local verification via `iyou_home`
+
+#### **Sovereign Spectrum Support**
+
+Polly implements both participation modes defined in the Omni-Social Meta-Protocol:
+
+**Managed Mode (Level 1)**:
+- Cloud-based key management via `iyou_idp`
+- Easier onboarding for new users
+- Keys stored in secure cloud vault
+
+**Sovereign Mode (Level 2)**:
+- Local key storage in `iyou_home`
+- Signing requests via Local WebSocket Bridge (`ws://127.0.0.1:9001`)
+- Full user control over private keys
+
+#### **Omni-Social Data Standards**
+
+- **JSON Envelopes**: All API responses follow Omni-Social standard format
+- **Sync to Home**: Vote history can be pushed to local `iyou_home` instances
+- **Nostr Integration**: Poll events broadcast as Nostr events for ecosystem distribution
 
 ## Current Implementation Status
 

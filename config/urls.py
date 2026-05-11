@@ -25,6 +25,7 @@ from apps.accounts.views import (
     GenerateCredentialView,
     GenerateDIDAndVCView,
     ImportCredentialView,
+    LoginRedirectView,
     RegisterView,
     UpdateVCNameView,
     VCManagementView,
@@ -38,7 +39,9 @@ urlpatterns = [
     path("", include("apps.poller.urls")),
     path("__debug__/", include("debug_toolbar.urls")),  # Django Debug Toolbar
     path("oidc/", include("mozilla_django_oidc.urls")),
-    path("login/", include("mozilla_django_oidc.urls")), # Override login with OIDC
+    path("login/", LoginRedirectView.as_view(), name="login"), # Redirect to OIDC authentication
+    path("login/", include("mozilla_django_oidc.urls")), # OIDC authentication endpoints
+    path("register/", RegisterView.as_view(), name="register"), # DID registration
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path(
         "login/did/",

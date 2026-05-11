@@ -16,6 +16,7 @@ from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views import View
+from django.views.generic import RedirectView
 
 from apps.accounts.forms import UserCreationForm
 from apps.accounts.utils.did_utils import generate_did, issue_vc
@@ -24,6 +25,16 @@ User = get_user_model()
 
 # Create logger instance
 logger = logging.getLogger(__name__)
+
+
+class LoginRedirectView(RedirectView):
+    """
+    Redirect traditional login URLs to OIDC authentication.
+
+    This view ensures backward compatibility by redirecting /login/ to the OIDC flow.
+    """
+    permanent = True
+    pattern_name = "oidc_authentication_init"
 
 
 class DIDLoginView(View):
