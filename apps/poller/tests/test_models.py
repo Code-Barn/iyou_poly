@@ -43,8 +43,9 @@ class PollModelTests(TestCase):
         )
         opt = PollOption.objects.create(poll=poll, text="Option 1")
         Vote.objects.create(poll=poll, option=opt, voter_did=self.user.username)
-        # BUG: option.votes counter not auto-incremented on vote creation
-        self.assertEqual(poll.total_votes, 0)
+        # Refresh from DB to pick up signal-based counter increment
+        opt.refresh_from_db()
+        self.assertEqual(poll.total_votes, 1)
 
     def test_poll_scope_requirement(self):
         scope_type = ScopeType.objects.create(name="TestScopeType")
@@ -90,16 +91,17 @@ class VoteModelTests(TestCase):
         self.assertEqual(vote.voter_did, self.user.username)
         self.assertEqual(vote.poll, self.poll)
         self.assertEqual(vote.option, self.option)
-        # BUG: signature defaults to '' not None
-        self.assertEqual(vote.signature, "")
+        self.assertIsNone(vote.signature)
         self.assertIsNone(vote.merkle_root)
 
     def test_vote_str(self):
         vote = Vote.objects.create(
             poll=self.poll,
             option=self.option,
+            user=self.user,
             voter_did=self.user.username,
         )
-        # BUG: __str__ format is inverted
+        self.assertIn("cast vote for", str(vote))
         self.assertIn(self.user.username, str(vote))
-        self.assertIn("Option 1", str(vote))
+        self.assertIn("'Option 1'", str(vote))
+        self.assertIn("[Vote Test Poll]", str(vote))

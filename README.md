@@ -1,286 +1,154 @@
-# Polly: Decentralized/Federated Identity and Polling Platform
+# Polly: Sovereign Decentralized Polling Platform
 
-Polly is a decentralized/federated identity provider and polling platform. It provides DID-based authentication, Verifiable Credentials, scope-aware polling, and can be embedded in external applications.
+Polly is the **Governance Layer** of the Sovereign Mesh. It provides OIDC/DID-authenticated,
+credential-scoped polling with verifiable audit trails. All cryptographic signing is
+delegated to the local Tauri Desktop Bridge (`iyou_home` at `ws://127.0.0.1:9001`) —
+the server never holds private keys.
+
+## Architecture
+
+```
+┌─────────────┐     OIDC Auth     ┌──────────────┐
+│  iyou_idp   │◄────────────────►│    Polly     │
+│  :8000      │                   │  :8002       │
+└─────────────┘                   └──────┬───────┘
+                                         │
+                                   WebSocket │ sign_credential
+                                         ▼
+                               ┌──────────────────┐
+                               │  iyou_home        │
+                               │  Tauri Bridge     │
+                               │  :9001            │
+                               └──────────────────┘
+```
 
 ## Prerequisites
-- Python 3.13 or higher
+
+- Python 3.13+
 - Django 6.0+
-- SQLite (dev) or PostgreSQL (production)
+- SQLite (dev) / PostgreSQL (prod)
+- `iyou_idp` running on `127.0.0.1:8000`
+- `iyou_home` Tauri bridge on `127.0.0.1:9001` (for VC signing)
 
 ## Features
 
-- **Decentralized Identity (DID) Support**: Manage DIDs (did:key, did:ethr, did:web, did:ion), DID methods, and DID documents.
-- **DID-Based Authentication**: Passwordless login using Verifiable Credentials (VCs).
-- **OpenID Connect (OIDC) Support**: Integrate with Google, GitHub, and other OAuth2 providers.
-- **Verifiable Credentials (VCs)**: Issue, store, verify, and manage credentials.
-- **Hybrid Authentication**: Combine DID, traditional, and OIDC auth.
-- **Scope-Based Voting**: Credential-aware polls with scope requirements.
-- **Family-Scoped Polling**: Family-unit, family-scoped, and organization polls.
+- **OIDC-Only Authentication**: All users authenticate through `iyou_idp` at `127.0.0.1:8000`. Username is the IdP `sub` claim (the DID). No passwords, no social logins.
+- **Verifiable Credentials (VCs)**: Issue, store, and manage credentials. Signing done via the Tauri bridge WebSocket protocol (`ws://127.0.0.1:9001`).
+- **Signature Bridge Protocol**: `sign`, `sign_event`, `sign_credential` message types — see [Developer Guide](POLLY_DEVELOPER_GUIDE.md).
+- **Scope-Based Voting**: Credential-aware polls with family, organization, and geographic scoping.
+- **Family-Scoped Polling**: Family-unit, family-scoped, and organization poll types.
 - **Proposal & Funding**: Polls with funding goals and progress tracking.
-- **Embeddable Widget**: Integrate polls into external apps.
-- **Federated Database**: Sync data across nodes with conflict resolution.
-- **Cactus Comments**: Decentralized discussions via Matrix.
-- **RESTful API**: Full API for identity, credentials, polls, and federation.
+- **Embeddable Widget**: Integrate polls into external apps via iframe.
+- **Federated Database**: Gossip-protocol sync across nodes with version vectors.
+- **HTMX-Powered UI**: Dynamic voting without full page reloads.
+- **RESTful API**: Full API for polls, votes, credentials, and federation.
 
 ## Getting Started
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Code-Barn/polly-django.git
-   cd polly-django
-   ```
-
-2. Install dependencies (using uv recommended):
-   ```bash
-   uv sync
-   ```
-
-3. Run migrations:
-   ```bash
-   uv run python manage.py migrate
-   ```
-
-4. Create initial scopes:
-   ```bash
-   uv run python manage.py create_geographical_scopes
-   ```
-
-5. Start the server:
-   ```bash
-   uv run python manage.py runserver
-   ```
-
-6. Access: Admin at `http://localhost:8000/admin/` | API at `http://localhost:8000/api/`
-
-## Roadmap
-
-### Phase 1: Core Identity & Credentials - ✅ COMPLETE
-### Phase 2: Polling System - ✅ COMPLETE
-### Phase 3: Embeddable & Federation - ✅ COMPLETE
-
-### Phase 4: Next Steps
-- [ ] IPFS integration for immutable storage
-- [ ] Blockchain anchoring for votes
-- [ ] WebSocket real-time federation
-- [ ] Mobile/PWA frontend
-
-## Front-End Development
-Polly now includes a front-end built with Django Templates and HTMX for dynamic interactions. Here’s what’s available:
-
-### Features
-- **Poll List**: View all active polls at `http://localhost:8000/`.
-- **Poll Detail**: View and vote on individual polls at `http://localhost:8000/<poll_id>/`.
-- **Authentication**: Log in and out using the links in the header.
-- **Voting**: Cast votes dynamically without a full page reload.
-
-### Testing Front-End Functionality
-The test suite includes tests for the front-end views and API endpoints. To run the tests:
 ```bash
-python manage.py test
+# Clone
+git clone https://github.com/Code-Barn/polly-django.git
+cd polly-django
+
+# Install
+uv sync
+
+# Migrate
+uv run python manage.py migrate
+
+# Create initial scopes
+uv run python manage.py create_geographical_scopes
+
+# Start server
+uv run python manage.py runserver 127.0.0.1:8002
 ```
 
-## Usage
+Access: `http://127.0.0.1:8002/`
 
-### OIDC Authentication
-Users can authenticate using external providers like Google or GitHub. The login page provides options for OIDC-based authentication:
+> **Note:** The server must bind to `127.0.0.1` (not `0.0.0.0` or `localhost`) to
+> comply with the Omni-Mesh Private Network Access (PNA) rules. Safari requires
+> the bridge at `:9001` to respond with `Access-Control-Allow-Private-Network: true`.
 
-```html
-<!-- Example OIDC login buttons -->
-<a href="{% url 'social:begin' 'google-oauth2' %}"
-   class="block w-full text-center bg-red-600 text-white p-2 rounded">
-    Login with Google
-</a>
-<a href="{% url 'social:begin' 'github' %}"
-   class="block w-full text-center bg-gray-800 text-white p-2 rounded">
-    Login with GitHub
-</a>
+## OIDC Authentication Flow
+
+1. User visits `http://127.0.0.1:8002/` and clicks **Login**
+2. Redirected to `http://127.0.0.1:8000/openid/authorize/` (iyou_idp)
+3. IdP authenticates (may request a signature challenge from `ws://127.0.0.1:9001`)
+4. Callback at `http://127.0.0.1:8002/oidc/callback/` creates/authenticates user
+5. `username` is set to the `sub` claim (the DID)
+6. Session cookie: `polly_sessionid`
+
+## Signature Bridge
+
+The Tauri Desktop Bridge (`iyou_home` on `:9001`) handles all cryptographic operations:
+
+| Message Type | Purpose |
+|-------------|---------|
+| `sign` | Sign a challenge for IdP login (returns Verifiable Presentation) |
+| `sign_event` | Sign a Nostr event for mesh distribution |
+| `sign_credential` | Stamp a `proof` block on an unsigned VC |
+
+**Credential issuance flow:**
+```
+POST /credentials/generate/    → unsigned VC JSON
+  → WebSocket ws://127.0.0.1:9001  → sign_credential
+  → bridge returns signed VC (with proof)
+POST /credentials/store-signed/ → stored in user.vcs
 ```
 
-### Front-End
-- **Poll List**: Visit `http://localhost:8000/` to view all active polls.
-- **Poll Detail**: Click on a poll to view its details and vote.
-- **Authentication**: Use the login/logout links in the header to authenticate.
+## Polling API Endpoints
 
-### Core API Endpoints
+### Poll API
+- `GET /api/polls/` — List active polls
+- `GET /api/polls/<id>/` — Poll detail
+- `POST /api/polls/` — Create poll
+- `PUT /api/polls/<id>/` — Update poll
+- `DELETE /api/polls/<id>/` — Delete poll
+- `POST /api/polls/<id>/fund/` — Add funding to proposal
 
-#### Federated Data API
-- **GET `/api/federated-data/`**: Retrieve all federated data.
-- **GET `/api/federated-data/<node_name>/`**: Retrieve federated data for a specific node.
-- **GET `/api/federated-data/<node_name>/<data_type>/<data_id>/`**: Retrieve a specific federated data entry.
-- **POST `/api/federated-data/<node_name>/`**: Create a new federated data entry.
-- **PUT `/api/federated-data/<node_name>/<data_type>/<data_id>/`**: Update a specific federated data entry.
-- **DELETE `/api/federated-data/<node_name>/<data_type>/<data_id>/`**: Delete a specific federated data entry.
+### Vote API
+- `POST /api/polls/<id>/vote/` — Cast vote (HTMX)
+- `POST /api/polls/<id>/cast/` — Cast vote (DRF)
+- `GET /api/polls/<id>/eligibility/` — Check voting eligibility
 
-#### DID API
-- **GET `/api/dids/`**: Retrieve all DIDs.
-- **GET `/api/dids/<did_uri>/`**: Retrieve a specific DID and its DID Document.
+### Embed API
+- `GET /api/embed/polls/` — Embeddable poll list
+- `GET /api/embed/polls/<id>/` — Embeddable single poll
 
-### Polling API Endpoints
+### Credential API
+- `GET /credentials/` — VC management dashboard
+- `POST /credentials/generate/` — Generate unsigned VC
+- `POST /credentials/store-signed/` — Store bridge-signed VC
+- `POST /credentials/delete/` — Delete a VC
+- `GET /credentials/import/` — Import a VC
 
-#### Poll API
-- **GET `/api/polls/`**: Retrieve all active polls.
-- **GET `/api/polls/?embedding_app=<app>`**: Filter by embedding app.
-- **GET `/api/polls/?poll_type=family_unit`**: Filter by poll type.
-- **GET `/api/polls/?scope_type=organization&scope_value=Acme`**: Filter by scope.
-- **GET `/api/polls/<poll_id>/`**: Retrieve a specific poll.
-- **POST `/api/polls/`**: Create a new poll.
-- **PUT `/api/polls/<poll_id>/`**: Update a poll.
-- **DELETE `/api/polls/<poll_id>/`**: Delete a poll.
-- **POST `/api/polls/<poll_id>/fund/`: Add funding to a proposal.
-
-#### Vote API
-- **POST `/api/polls/<poll_id>/vote/`**: Cast a vote.
-- **POST `/api/polls/<poll_id>/cast/`**: Cast vote (DRF endpoint).
-- **GET `/api/polls/<poll_id>/eligibility/`**: Check voting eligibility.
-
-#### Embed API
-- **GET `/api/embed/polls/`**: Get polls for embedding (filtered by user credentials).
-- **GET `/api/embed/polls/<poll_id>/`**: Get single poll for embedding.
-
-### DID Utilities
-```python
-from apps.accounts.utils.did_utils import generate_did, validate_did, create_did_document
-
-# Generate a DID
-did = generate_did(method="key")
-print(did)  # Output: did:key:example123456789
-
-# Validate a DID
-is_valid = validate_did(did)
-print(is_valid)  # Output: True
-
-# Create a DID Document
-did_document = create_did_document(did)
-print(did_document)
-```
-
-### Custom Authentication
-```python
-from django.contrib.auth import authenticate
-
-# Authenticate using a DID
-user = authenticate(request, did="did:key:example123456789")
-print(user)
-```
-
-## Embeddable Polly Widget
-
-Polly can be embedded in external applications like Byers Brands LLC or Namechart.
-
-### API Endpoints
+## Testing
 
 ```bash
-# Get polls for embedding (filtered by app + user credentials)
-GET /api/embed/polls/?embedding_app=byers-brands-llc&user_did=did:key:...
+# Run all tests (skips bridge-dependent)
+uv run python -m pytest -v -m "not bridge"
 
-# Get single poll for embedding
-GET /api/embed/polls/123/?embedding_app=byers-brands-llc&user_did=...
+# Run specific app tests
+uv run python -m pytest apps/poller/tests/
+uv run python -m pytest apps/accounts/tests/
+
+# Run with coverage
+uv run pytest --cov=apps -m "not bridge"
 ```
-
-### Query Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `embedding_app` | External app identifier (e.g., 'byers-brands-llc') |
-| `user_did` | User's DID for credential-based filtering |
-| `scope` | Filter by scope value |
-| `theme` | 'light' or 'dark' |
-
-### Embed Template
-
-Include the widget in your HTML:
-
-```html
-{% include "poller/partials/embed_widget.html" %}
-```
-
-## Family-Scoped Polling
-
-Polls support different visibility and authorization types:
-
-| Poll Type | Description |
-|-----------|-------------|
-| `public` | Visible to all users |
-| `family_unit` | Private polls for family members only (creator + authorized) |
-| `family_scoped` | Public within family scope, includes descendants |
-| `organization` | Organization-specific polls |
-
-### Creating Family Polls
-
-```python
-from apps.poller.models import Poll
-
-# Family-unit poll (private)
-poll = Poll.objects.create(
-    title="Family Vacation Vote",
-    poll_type=Poll.PollType.FAMILY_UNIT,
-    created_by=user,
-    ...
-)
-
-# Family-scoped poll
-poll = Poll.objects.create(
-    title="Family Reunion Location",
-    poll_type=Poll.PollType.FAMILY_SCOPED,
-    required_scope=family_scope,
-    parent_poll=parent_poll,  # Optional hierarchy
-    ...
-)
-```
-
-## Proposal & Funding Workflows
-
-Polls can be used as proposals with funding goals:
-
-### Create Proposal
-
-```python
-poll = Poll.objects.create(
-    title="Community Project",
-    is_proposal=True,
-    funding_goal=10000.00,
-    funding_deadline=datetime(2026, 12, 31),
-    ...
-)
-```
-
-### Fund Proposal
-
-```bash
-POST /api/polls/{poll_id}/fund/
-Content-Type: application/json
-
-{"amount": 500.00}
-```
-
-### Funding Progress
-
-The `funding_progress` property returns percentage (0-100).
-
-## Comments Integration
-
-Comments will use the ecosystem's Nostr relay (coming soon).
 
 ## Known Issues
 
 1. **Federated Poll Versioning**: The `version` of `FederatedData` entries may be incremented multiple times during poll creation.
-2. **Vote Count Synchronization**: The vote count in `FederatedData` entries may be incremented multiple times when a vote is cast.
-
-We are actively working to resolve these issues in upcoming releases.
+2. **Bridge-Dependent Tests**: 3 tests marked `@pytest.mark.xfail` require the Tauri bridge on `:9001` to respond to `sign_credential`.
 
 ## Contributing
 
-We welcome contributions! Please follow these guidelines to contribute to Polly:
-
-1. **Fork the Repository**: Create a fork of the Polly repository on GitHub.
-2. **Create a Branch**: Create a new branch for your feature or bugfix.
-3. **Write Code**: Implement your changes, ensuring they follow the project's coding standards.
-4. **Write Tests**: Add unit tests for your changes to ensure they work as expected.
-5. **Submit a Pull Request**: Open a pull request to the `main` branch of the Polly repository.
-
-For more details, see our [Contribution Guidelines](CONTRIBUTING.md). We welcome contributions to help resolve the known issues!
+1. Fork the repository
+2. Create a feature branch
+3. Write code + tests
+4. Ensure `pytest -m "not bridge"` passes
+5. Submit a pull request
 
 ## License
 
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.

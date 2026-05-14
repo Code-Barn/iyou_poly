@@ -477,9 +477,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
             is_verified=True
         )
 
-        # Increment the vote count on the option
-        option.votes = option.votes + 1
-        option.save()
+        # Counter increment handled by post_save signal on Vote
 
         # For HTMX requests, we'll handle the response in vote_api
         # For non-HTML requests, return a simple success response
@@ -985,8 +983,7 @@ class CastVoteAPIView(APIView):
             verification_details={"credential_verified": True},
         )
 
-        option.votes += 1
-        option.save()
+        # Counter increment handled by post_save signal on Vote
 
         return Response(
             {

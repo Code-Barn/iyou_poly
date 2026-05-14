@@ -82,17 +82,18 @@ class GenerateCredentialView(View):
         credential_name = request.POST.get("credential_name", "").strip()
         credential_type = request.POST.get("credential_type", "MembershipCredential").strip()
         scope_value = request.POST.get("scope_value", "").strip()
+        subject_did = request.POST.get("subject_did", "").strip() or user.username
 
-        did = user.username  # username IS the DID from OIDC
+        issuer_did = user.username  # username IS the DID from OIDC
 
         unsigned_credential = {
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             "type": ["VerifiableCredential", credential_type],
-            "issuer": did,
+            "issuer": issuer_did,
             "issuanceDate": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "credentialSubject": {
-                "id": did,
-                "name": user.username,
+                "id": subject_did,
+                "name": subject_did if subject_did != issuer_did else user.username,
                 "description": credential_name or f"{credential_type} for {user.username}",
             },
         }
@@ -102,6 +103,7 @@ class GenerateCredentialView(View):
             "credential_name": credential_name or credential_type,
             "credential_type": credential_type,
             "scope_value": scope_value,
+            "subject_did": subject_did,
         })
 
 

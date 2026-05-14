@@ -50,6 +50,34 @@ Polly serves as the **Governance Layer** in the Omni-Stack:
    - Users can verify votes by recalculating Merkle roots
    - "Verify on Desktop" mechanism exports signed vote history for local verification via `iyou_home`
 
+#### **Signature Bridge Protocol (Port 9001)**
+
+Polly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_home` at `ws://127.0.0.1:9001`). The server never holds private keys.
+
+**WebSocket Message Types:**
+
+| Type | Payload | Response | Purpose |
+|------|---------|----------|---------|
+| `sign` | `{ challenge: "<uuid>" }` | `{ type: "signed", challenge, signature }` | IdP login proof — builds a Verifiable Presentation from the challenge |
+| `sign_event` | `{ kind, content, tags, ... }` | `{ type: "signed_event", event }` | Nostr event signing for mesh distribution |
+| `sign_credential` | `{ credential: { ...unsigned VC... } }` | `{ type: "signed_credential", vc: { ...signed VC... } }` | VC issuance — bridge stamps `proof` block on the unsigned credential |
+
+**JavaScript Flow (credential issuance):**
+```
+POST /credentials/generate/    → unsigned VC JSON
+  → signCredentialViaBridge()  → ws://127.0.0.1:9001 sign_credential
+  → bridge responds with signed VC (proof block added)
+POST /credentials/store-signed/ → stored in user.vcs
+```
+
+**Private Network Access (PNA) for Safari:** Because the bridge lives on `127.0.0.1:9001` and Polly runs on `127.0.0.1:8002`, Safari requires a **Private Network Access** preflight. The bridge must respond to HTTP GET `/` with the header:
+```
+Access-Control-Allow-Private-Network: true
+```
+This header is sent by `iyou_home`'s HTTP listener (serving the mesh probe at `:9001`). Without it, Safari blocks WebSocket connections to the bridge.
+
+**Mesh Probe:** The nav badge (`_nav.html`) probes `http://127.0.0.1:9001/` via `fetch` with a 300ms timeout. If the bridge responds, "Sovereign Mesh Active" badge appears. This is used both as a health check and as the PNA handshake trigger.
+
 #### **Sovereign Spectrum Support**
 
 Polly implements both participation modes defined in the Omni-Social Meta-Protocol:
@@ -162,11 +190,15 @@ Polly implements both participation modes defined in the Omni-Social Meta-Protoc
 - `sync_poll_option_on_save`: Option change synchronization
 
 **Known Issues:**
-- Vote count synchronization may increment multiple times
 - Federated poll versioning can be inconsistent
 - No conflict resolution for simultaneous votes
 
 ### Authentication System
+
+**Identity Model:**
+- **Passwords are DEPRECATED.** The project uses OIDC + DID exclusively. No password-based backends are registered; no standard Django login views are used.
+- **Primary entry point:** `http://127.0.0.1:8002/oidc/authenticate/` redirects to `iyou_idp` at `http://127.0.0.1:8000/openid/authorize/`. The IdP returns the `sub` claim, which becomes the user's `username` (the DID).
+- **Session:** `polly_sessionid` cookie, `SameSite=Lax`, `HttpOnly=True`. Prevents collisions with WUN/IdP cookies.
 
 **Current Implementation:**
 - ✅ OIDC-only authentication via `mozilla-django-oidc` + `MyOIDCAuthenticationBackend`
@@ -212,7 +244,6 @@ Polly implements both participation modes defined in the Omni-Social Meta-Protoc
 ### Critical Issues
 
 1. **Federation Consistency:**
-   - Vote count synchronization can increment multiple times
    - Version vectors may not handle concurrent updates correctly
    - No transactional consistency across nodes
 

@@ -319,29 +319,30 @@
             setResultFormat('{{ poll.id }}', savedFormat);
         });
 
-        async function copyPollHistory(pollId) {
-            try {
-                const response = await fetch(`/api/polls/${pollId}/history/`);
-                const data = await response.json();
-
+        function copyPollHistory(pollId) {
+            var successMsg = document.getElementById('copy-success-' + pollId);
+            // Write placeholder immediately to capture user gesture (Safari requires this)
+            navigator.clipboard.writeText('Loading poll history...').then(function () {
+                return fetch('/api/polls/' + pollId + '/history/');
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
                 if (data.status === 'success') {
-                    const jsonStr = JSON.stringify(data, null, 2);
-                    await navigator.clipboard.writeText(jsonStr);
-
-                    const successMsg = document.getElementById(`copy-success-${pollId}`);
-                    if (successMsg) {
-                        successMsg.classList.remove('hidden');
-                        setTimeout(() => {
-                            successMsg.classList.add('hidden');
-                        }, 3000);
-                    }
+                    var jsonStr = JSON.stringify(data, null, 2);
+                    return navigator.clipboard.writeText(jsonStr).then(function () {
+                        if (successMsg) {
+                            successMsg.classList.remove('hidden');
+                            setTimeout(function () { successMsg.classList.add('hidden'); }, 3000);
+                        }
+                    });
                 } else {
                     alert('Failed to fetch poll history: ' + (data.message || 'Unknown error'));
                 }
-            } catch (err) {
+            })
+            .catch(function (err) {
                 console.error('Error copying poll history:', err);
                 alert('Error copying poll history. See console for details.');
-            }
+            });
         }
     </script>
 </div>

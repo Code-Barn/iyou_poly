@@ -67,3 +67,81 @@ class PollCreateViewTests(TestCase):
         self.client.force_login(user)
         response = self.client.get(reverse("poll_create"))
         self.assertEqual(response.status_code, 200)
+
+
+@_no_session_refresh
+class VoteAPITests(TestCase):
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="voter")
+        self.poll = Poll.objects.create(
+            title="Votable Poll",
+            created_by=self.user,
+            poll_type=PollType.PUBLIC,
+        )
+        self.option = PollOption.objects.create(poll=self.poll, text="Option A")
+
+    def test_authenticated_user_can_vote(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Vote cast successfully", str(response.content))
+
+    def test_vote_increments_option_counter(self):
+        self.client.force_login(self.user)
+        self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+        )
+        self.option.refresh_from_db()
+        self.assertEqual(self.option.votes, 1)
+
+    def test_unauthenticated_user_cannot_vote(self):
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_duplicate_vote_prevented(self):
+        self.client.force_login(self.user)
+        self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+        )
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already voted", str(response.content))
+
+    def test_vote_without_option_id_returns_error(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Option ID is required", str(response.content))
+
+    def test_public_poll_does_not_require_credential(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("requires_credential", str(response.content))
+
+    def test_vote_api_htmx_success_returns_html(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("vote_api", args=[self.poll.id]),
+            {"option_id": self.option.id},
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "You voted for")

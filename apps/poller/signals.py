@@ -5,6 +5,7 @@ This module defines signals for handling events related to federated poll synchr
 such as creating, updating, and deleting polls and votes.
 """
 
+from django.db import models
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
@@ -127,6 +128,9 @@ def sync_vote_on_save(sender, instance, created, **kwargs):
     """
     Signal receiver to synchronize a vote when it is saved.
 
+    Always increments the PollOption.votes counter on vote creation,
+    and optionally syncs to federated data if a FederatedData entry exists.
+
     Args:
         sender: The model class sending the signal.
         instance: The instance of Vote being saved.
@@ -134,25 +138,21 @@ def sync_vote_on_save(sender, instance, created, **kwargs):
         **kwargs: Additional keyword arguments.
     """
     if created:
-        # Update the federated data entry for the poll
+        option = instance.option
+        option.votes = models.F("votes") + 1
+        option.save(update_fields=["votes"])
+
         federated_data = FederatedData.objects.filter(
             data_type="poll",
             data_id=str(instance.poll.id),
         ).first()
 
         if federated_data:
-            # Update the poll data with the new vote count
             poll_data = federated_data.data
-            for option in poll_data["options"]:
-                if option["text"] == instance.option.text:
-                    option["votes"] += 1
-                    # Update the vote count for the poll option
-                    instance.option.votes = option["votes"]
-                    instance.option.save()
+            for opt in poll_data["options"]:
+                if opt["text"] == option.text:
+                    opt["votes"] = option.votes
                     break
             federated_data.data = poll_data
-            federated_data.version += 1
-            federated_data.save()
-            # Update the vote count for the poll option after saving federated data
-            instance.option.save()
-            instance.option.save()
+            federated_data.version = models.F("version") + 1
+            federated_data.save(update_fields=["data", "version"])

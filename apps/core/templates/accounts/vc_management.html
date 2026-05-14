@@ -56,6 +56,9 @@
                                     <div>
                                         <h4 class="font-medium text-gray-900" data-vc-id="{{ vc.credentialSubject.id }}">
                                             {{ vc_data.name }}
+                                            {% if vc.proof %}
+                                                <span class="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-medium">Verified</span>
+                                            {% endif %}
                                         </h4>
                                         <input
                                             type="text"
@@ -128,10 +131,10 @@
                 ws.onmessage = function (event) {
                     try {
                         var msg = JSON.parse(event.data);
-                        if (msg.type === "signed_credential" && msg.credential) {
+                        if (msg.type === "signed_credential" && msg.vc) {
                             clearTimeout(timeout);
                             ws.close();
-                            resolve(msg.credential);
+                            resolve(msg.vc);
                         }
                     } catch (e) { /* ignore partial messages */ }
                 };

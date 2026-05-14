@@ -4,6 +4,9 @@
         <div class="flex items-center gap-4">
             <a href="{% url 'poll_list' %}" class="text-sm text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400">Polls</a>
             {% if user.is_authenticated %}
+                <span class="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium dark:bg-purple-900 dark:text-purple-200" title="{{ user.username }}">
+                    {% if "did:" in user.username %}{{ user.username|truncatechars:24 }}{% else %}{{ user.username }}{% endif %}
+                </span>
                 <a href="{% url 'vc_management' %}" class="text-sm text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400">Credentials</a>
             {% endif %}
             <a href="http://127.0.0.1:8001" class="text-sm font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-md hover:bg-indigo-100 border border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-700 dark:hover:bg-indigo-800">Return to Social Feed</a>
