@@ -4,74 +4,20 @@
 
 {% block content %}
     <div class="max-w-4xl mx-auto mt-8">
-        <div class="bg-white shadow rounded-lg p-6">
-            <h2 class="text-2xl font-bold text-gray-900 mb-2 text-center">Login to Polly</h2>
-            <p class="text-center text-gray-600 mb-6">
-                Choose your preferred authentication method
+        <div class="bg-white shadow rounded-lg p-6 text-center">
+            <h2 class="text-2xl font-bold text-gray-900 mb-2">Login to Polly</h2>
+            <p class="text-gray-600 mb-6">
+                Authenticate via the Sovereign Mesh to access the polling dashboard.
             </p>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- DID Authentication -->
-                <div class="border rounded-lg p-4 bg-green-50">
-                    <h3 class="font-semibold text-gray-900 mb-3 flex items-center">
-                        <span class="text-green-600 mr-2">🔐</span>
-                        DID Authentication (Recommended)
-                    </h3>
-                    <p class="text-sm text-gray-600 mb-3">
-                        Secure, passwordless login using your decentralized identity.
-                    </p>
-                    <a
-                        href="{% url 'did_login' %}"
-                        class="block w-full text-center bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 font-medium"
-                    >
-                        Login with DID
-                    </a>
-                    <div class="mt-3 text-xs text-gray-500">
-                        <p>✅ More secure than passwords</p>
-                        <p>✅ Works across federated servers</p>
-                        <p>✅ No password to remember</p>
-                    </div>
-                </div>
-
-                <!-- Sovereign Identity (OIDC) -->
-                <div class="border rounded-lg p-4 bg-blue-50">
-                    <h3 class="font-semibold text-gray-900 mb-3 flex items-center">
-                        <span class="text-blue-600 mr-2">🌐</span>
-                        Sovereign Identity (OIDC)
-                    </h3>
-                    <p class="text-sm text-gray-600 mb-3">
-                        Connect using your iyou_idp account for seamless authentication.
-                    </p>
-                    <a
-                        href="{% url 'oidc_authentication_init' %}"
-                        class="block w-full text-center bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 font-medium"
-                    >
-                        Login with iyou_idp
-                    </a>
-                    <div class="mt-3 text-xs text-gray-500">
-                        <p>✅ Trusted federated identity</p>
-                        <p>✅ Single sign-on experience</p>
-                        <p>✅ Protocol-compliant</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-6 text-center">
-                <p class="text-sm text-gray-600">
-                    All authentication is handled via decentralized protocols. No passwords stored.
-                </p>
-            </div>
-
-            <div class="mt-8 p-4 bg-blue-50 rounded-lg">
-                <h3 class="font-semibold text-gray-900 mb-2">💡 Why use DID Authentication?</h3>
-                <ul class="list-disc list-inside space-y-1 text-sm text-gray-600">
-                    <li><strong>Decentralized:</strong> No central authority controls your identity</li>
-                    <li><strong>Portable:</strong> Use the same identity across multiple services</li>
-                    <li><strong>Secure:</strong> Cryptographic proof instead of passwords</li>
-                    <li><strong>Private:</strong> Share only what's necessary for authentication</li>
-                    <li><strong>Resilient:</strong> Works even if external services are down</li>
-                </ul>
-            </div>
+            <a
+                href="{% url 'oidc_authentication_init' %}"
+                class="inline-block bg-blue-600 text-white py-3 px-8 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 font-medium"
+            >
+                Login with Sovereign Identity
+            </a>
+            <p class="text-sm text-gray-500 mt-4">
+                You will be redirected to the Identity Provider to authenticate.
+            </p>
         </div>
     </div>
 {% endblock %}

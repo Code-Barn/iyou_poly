@@ -125,27 +125,11 @@ DATABASES = {
 }
 
 
-# Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
+# Password validation disabled — all auth is OIDC/DID based
+AUTH_PASSWORD_VALIDATORS = []
 
 AUTHENTICATION_BACKENDS = [
-    "apps.accounts.backends.DIDAuthBackend",
-    "apps.accounts.backends.OIDCAuthBackend",
+    "apps.accounts.backends.MyOIDCAuthenticationBackend",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -172,19 +156,37 @@ STATICFILES_DIRS = [BASE_DIR / "apps" / "core" / "static"]
 # Authentication
 LOGIN_REDIRECT_URL = "poll_list"
 LOGOUT_REDIRECT_URL = "poll_list"
+LOGIN_URL = "oidc_authentication_init"
+
+# Session cookie — unique name to prevent collisions with WUN/IdP on 127.0.0.1
+SESSION_COOKIE_NAME = "polly_sessionid"
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_DOMAIN = None
+SESSION_SAVE_EVERY_REQUEST = True
 
 # OIDC Settings
-OIDC_RP_CLIENT_ID = "polly-django"
-OIDC_RP_CLIENT_SECRET = "polly-secret" # In production this would be in .env
+OIDC_RP_CLIENT_ID = "747582"
+OIDC_RP_CLIENT_SECRET = "1522b34850cdd1140f889d8e0fdf6704e52659af5d9a84adabfdfea0"
 OIDC_RP_SIGN_ALGO = "RS256"
+OIDC_RP_VERIFY_KID = False
 
-OIDC_OP_AUTHORIZATION_ENDPOINT = "http://localhost:8000/authorize"
-OIDC_OP_TOKEN_ENDPOINT = "http://localhost:8000/token"
-OIDC_OP_USER_ENDPOINT = "http://localhost:8000/userinfo"
-OIDC_OP_JWKS_ENDPOINT = "http://localhost:8000/jwks"
+# All OIDC endpoints use 127.0.0.1:8000 (the IdP)
+OIDC_OP_AUTHORIZATION_ENDPOINT = "http://127.0.0.1:8000/openid/authorize/"
+OIDC_OP_TOKEN_ENDPOINT = "http://127.0.0.1:8000/openid/token/"
+OIDC_OP_USER_ENDPOINT = "http://127.0.0.1:8000/openid/userinfo/"
+OIDC_OP_JWKS_ENDPOINT = "http://127.0.0.1:8000/openid/jwks/"
 
-# Treat sub claim as DID
-OIDC_USERNAME_ALGO = "apps.accounts.utils.did_utils.generate_username_from_sub"
+# Callback must use 127.0.0.1 to match session domain
+OIDC_RP_CALLBACK_URL = "http://127.0.0.1:8002/oidc/callback/"
+
+# Treat sub claim as DID — map directly to username
+OIDC_USERNAME_ALGO = lambda claims: claims.get("sub")
+
+# Bypass email requirement — we use DIDs, not email
+OIDC_RP_REQUIRED_CLAIMS = []
+OIDC_VERIFY_SSL = False
+OIDC_STORE_ID_TOKEN = True
 
 # Federated Identity and Trust Management
 # https://docs.djangoproject.com/en/6.0/topics/auth/customizing/

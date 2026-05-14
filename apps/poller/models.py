@@ -295,6 +295,12 @@ class Vote(models.Model):
         blank=True,
         help_text=_("Cryptographic signature from voter's DID key."),
     )
+    merkle_root = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_("Merkle root of vote batch for cryptographic verification."),
+    )
     credential_cid = models.CharField(
         max_length=255,
         blank=True,
