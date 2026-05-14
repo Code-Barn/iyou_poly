@@ -191,7 +191,6 @@ GET /api/embed/polls/123/?embedding_app=byers-brands-llc&user_did=...
 Include the widget in your HTML:
 
 ```html
-{% load cactus_comments %}
 {% include "poller/partials/embed_widget.html" %}
 ```
 
@@ -258,23 +257,9 @@ Content-Type: application/json
 
 The `funding_progress` property returns percentage (0-100).
 
-## Cactus Comments Integration
+## Comments Integration
 
-Decentralized comments using Matrix network. Add to poll templates:
-
-```html
-{% load cactus_comments %}
-{% cactus_comments poll.id %}
-```
-
-Configuration (optional, defaults to public Cactus server):
-
-```python
-# settings.py
-CACTUS_HOMESERVER_URL = "https://matrix.cactus.chat:8448"
-CACTUS_SERVER_NAME = "cactus.chat"
-CACTUS_SITE_NAME = "your-site-name"
-```
+Comments will use the ecosystem's Nostr relay (coming soon).
 
 ## Known Issues
 

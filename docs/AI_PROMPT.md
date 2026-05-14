@@ -148,4 +148,3 @@ polly/
 - [Tailwind CSS](https://tailwindcss.com/docs)
 - [W3C DID Core](https://www.w3.org/TR/did-core/)
 - [W3C VC Data Model](https://www.w3.org/TR/vc-data-model/)
-- [Cactus Comments](https://cactus.chat/docs/)
