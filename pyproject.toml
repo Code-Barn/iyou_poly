@@ -19,6 +19,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest-django>=4.10.0",
     "ruff>=0.14.10",
 ]
 
@@ -26,3 +27,19 @@ dev = [
 members = [
     "did-auth",
 ]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = [
+    "apps",
+    "tests",
+]
+python_files = ["test_*.py"]
+markers = [
+    "bridge: marks tests that require the Tauri bridge on :9001 (deselect with '-m \"not bridge\"')",
+    "slow: marks tests as slow running",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

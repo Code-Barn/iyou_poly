@@ -11,7 +11,7 @@ The current implementation fully supports **Polly Protocol Spec v1** within the 
 #### **Omni-Stack Integration**
 
 Polly serves as the **Governance Layer** in the Omni-Stack:
-- **Identity Layer**: Uses `did_rust` for DID-based authentication
+- **Identity Layer**: Uses OIDC (via `iyou_idp`) for authentication; username is the IdP `sub` claim
 - **Messaging Layer**: Integrates with Nostr for poll event distribution
 - **Storage Layer**: Publishes to Blossom/IPFS for content-addressed storage
 - **Governance Layer**: Provides verifiable polling and auditing
@@ -32,16 +32,16 @@ Polly serves as the **Governance Layer** in the Omni-Stack:
 - **Requirement**: All votes must include cryptographic signatures
 - **Implementation**: 
   - `Vote.signature` field stores cryptographic signatures
-  - API endpoints use the internal `did_rust` library for signature generation
+  - Server uses `hashlib.sha256` as a placeholder (bridge signing pending)
   - Votes without signatures are rejected by the system
 - **Verification**: Votes are marked as verified with `is_verified=True` flag
 
 #### **Cryptographic Voting Flow**
 
-1. **User Authentication**: OIDC-based authentication with DID mapping via `iyou_idp`
+1. **User Authentication**: OIDC-based authentication via `iyou_idp`; username mapped from `sub` claim
 2. **Vote Casting**: 
-   - Client sends vote data with DID
-   - Server generates cryptographic signature using the internal `did_rust` library
+   - Client sends vote data
+   - Server generates SHA-256 hash as signature placeholder (bridge signing pending)
    - Vote stored with signature in database
 3. **Ledger Anchoring**: 
    - Periodic Merkle root calculation from signatures via `anchor_ledger` command
@@ -169,16 +169,15 @@ Polly implements both participation modes defined in the Omni-Social Meta-Protoc
 ### Authentication System
 
 **Current Implementation:**
-- ✅ Traditional Django auth
-- ✅ DID-based authentication
-- ✅ OIDC providers (Google, GitHub)
-- ✅ Hybrid authentication support
-- ✅ Credential-based authorization
+- ✅ OIDC-only authentication via `mozilla-django-oidc` + `MyOIDCAuthenticationBackend`
+- ✅ Username = IdP `sub` claim (no separate DID field for new users)
+- ✅ Credential-based authorization via `User.vcs` JSONField
+- ❌ Traditional password auth removed
+- ❌ DID-based backends (`DIDAuthBackend`, `OIDCAuthBackend`) removed
 
 **Models:**
-- `CustomUser`: Extended user model with DID support
-- `DID`: Decentralized identifier management
-- `VerifiableCredential`: VC storage and verification
+- `CustomUser`: Extended user model; `username` holds the IdP `sub`; `did`/`did_key`/`did_method` fields deprecated (kept for legacy data); `vcs` JSONField active for VC storage
+- `DID`: Model retained for backward compatibility with existing poll/vote FK data; not used for new users
 
 ### Federation Protocol
 
@@ -419,8 +418,8 @@ uv run python manage.py runserver
    - `apps/poller/views.py` - API and template views
 
 3. **Authentication:**
-   - `apps/accounts/models.py` - User and DID models
-   - `apps/accounts/utils/did_utils.py` - DID utilities
+   - `apps/accounts/models.py` - User model with VC storage
+   - `apps/accounts/backends.py` - `MyOIDCAuthenticationBackend` (OIDC identity bridge)
 
 ### Testing
 
