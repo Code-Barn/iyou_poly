@@ -19,7 +19,13 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
-from apps.accounts.views import VCManagementView
+from apps.accounts.views import (
+    DeleteCredentialView,
+    GenerateCredentialView,
+    ImportCredentialView,
+    StoreSignedCredentialView,
+    VCManagementView,
+)
 from apps.poller.views import poll_list
 
 urlpatterns = [
@@ -32,4 +38,8 @@ urlpatterns = [
     path("login/", RedirectView.as_view(pattern_name="oidc_authentication_init"), name="login"),
     path("logout/", RedirectView.as_view(pattern_name="oidc_logout"), name="logout"),
     path("credentials/", VCManagementView.as_view(), name="vc_management"),
+    path("credentials/store-signed/", StoreSignedCredentialView.as_view(), name="store_signed_credential"),
+    path("credentials/generate/", GenerateCredentialView.as_view(), name="generate_credential"),
+    path("credentials/delete/", DeleteCredentialView.as_view(), name="delete_credential"),
+    path("credentials/import/", ImportCredentialView.as_view(), name="import_credential"),
 ]
