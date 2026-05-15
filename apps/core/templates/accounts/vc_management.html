@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% load vc_filters %}
+{% block title %}Verifiable Credentials - Polly{% endblock %}
+
+{% block content %}
+    <div class="bg-white shadow rounded-lg p-6 max-w-4xl mx-auto">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-900">Verifiable Credentials</h2>
+                {% if user.username|slice:":8" == "did:key:" or user.username|slice:":8" == "did:did:" or user.username|slice:":6" == "did:io"%}
+                    <span class="inline-block mt-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">Sovereign Identity</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="vc-container">
+            {% load vc_filters %}
+            {% if auth_vc %}
+                <div class="mb-8">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Authentication Credential</h3>
+                    <div class="bg-gray-50 rounded-lg p-4 relative">
+                        <pre class="text-sm text-gray-700 overflow-x-auto" id="auth-vc-json">{{ auth_vc|to_json_compact|escape }}</pre>
+                        <div class="absolute top-2 right-2 flex space-x-2">
+                            <button onclick="copyToClipboard('auth-vc-json', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                Copy
+                            </button>
+                            <a href="data:application/json;charset=utf-8,{{ auth_vc|to_json_compact|urlencode }}" download="auth_vc.json" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                Download
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+
+        <div>
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-lg font-semibold text-gray-900">Other Credentials</h3>
+                <div class="space-x-2">
+                    <button hx-get="{% url 'generate_credential' %}" hx-target="#generate-credential-modal" hx-swap="innerHTML" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Generate Credential
+                    </button>
+                    <button hx-get="{% url 'import_credential' %}" class="px-3 py-1 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                        Import Credential
+                    </button>
+                </div>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">Other credentials represent group memberships, roles, certifications, or attributes. These can be added, removed, and shared as needed.</p>
+            {% if vcs %}
+                <div class="space-y-4">
+                    {% for vc_data in vcs %}
+                        {% with vc=vc_data.credential counter=forloop.counter %}
+                        <div class="bg-gray-50 rounded-lg relative">
+                            <div class="p-4 pb-0 border-b border-gray-200">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-medium text-gray-900" data-vc-id="{{ vc.credentialSubject.id }}">
+                                            {{ vc_data.name }}
+                                            {% if vc.proof %}
+                                                <span class="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-medium">Verified</span>
+                                            {% endif %}
+                                        </h4>
+                                        <input
+                                            type="text"
+                                            id="edit-name-{{ vc.credentialSubject.id }}"
+                                            data-vc-id="{{ vc.credentialSubject.id }}"
+                                            class="hidden w-full text-sm border border-gray-300 rounded-md px-2 py-1"
+                                            value="{{ vc_data.name }}"
+                                        />
+                                        <p class="text-sm text-gray-500">
+                                            Added: {{ vc_data.added_date|date:"M d, Y H:i" }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-4 pt-0 overflow-x-auto">
+                                <pre class="text-sm text-gray-700" id="vc-json-{{ counter }}">{{ vc|to_json_compact|escape }}</pre>
+                            </div>
+                            <div class="absolute top-2 right-6 flex space-x-2">
+                                    <button onclick="copyToClipboard('vc-json-{{ counter }}', event)" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                        Copy
+                                    </button>
+                                    <a href="data:application/json;charset=utf-8,{{ vc|to_json_compact|urlencode }}" download="{{ vc_data.name|slugify }}.json" class="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                        Download
+                                    </a>
+                                    <button onclick="confirmDelete('{{ vc.credentialSubject.id }}', '{{ vc_data.name|escapejs }}')" class="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                                        Delete
+                                    </button>
+                                </div>
+                                <div class="absolute top-2 right-2">
+                                    <!-- Rename functionality removed - credentials are named upon creation -->
+                                </div>
+                        </div>
+                        {% endwith %}
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-8 bg-gray-50 rounded-lg">
+                    <p class="text-gray-600 mb-4">No other credentials yet.</p>
+                    <p class="text-sm text-gray-500 mb-4">Add credentials to represent group memberships, professional certifications, or other attributes.</p>
+                    <div class="space-x-2">
+                        <button hx-get="{% url 'generate_credential' %}" hx-target="#generate-credential-modal" hx-swap="innerHTML" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Generate Credential
+                        </button>
+                        <button hx-get="{% url 'import_credential' %}" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                            Import Credential
+                        </button>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        // --- Sovereign Bridge: sign a credential via Tauri at :9001 ---
+        function signCredentialViaBridge(unsignedCredential) {
+            return new Promise(function (resolve, reject) {
+                var ws;
+                try {
+                    ws = new WebSocket("ws://127.0.0.1:9001");
+                } catch (e) {
+                    reject(new Error("Cannot connect to bridge: " + e.message));
+                    return;
+                }
+                var timeout = setTimeout(function () {
+                    ws.close();
+                    reject(new Error("Bridge timeout after 10s"));
+                }, 10000);
+                ws.onopen = function () {
+                    ws.send(JSON.stringify({ type: "sign_credential", credential: unsignedCredential }));
+                };
+                ws.onmessage = function (event) {
+                    try {
+                        var msg = JSON.parse(event.data);
+                        if (msg.type === "signed_credential" && msg.vc) {
+                            clearTimeout(timeout);
+                            ws.close();
+                            resolve(msg.vc);
+                        }
+                    } catch (e) { /* ignore partial messages */ }
+                };
+                ws.onerror = function () {
+                    clearTimeout(timeout);
+                    reject(new Error("Bridge WebSocket error"));
+                };
+                ws.onclose = function () {
+                    clearTimeout(timeout);
+                };
+            });
+        }
+
+        function showBridgeStatus(msg, isError) {
+            var el = document.getElementById("bridge-status");
+            if (!el) return;
+            el.textContent = msg;
+            el.className = "text-sm mb-3 " + (isError ? "text-red-600" : "text-blue-600");
+            el.classList.remove("hidden");
+        }
+
+        function handleBridgeCredential(event) {
+            event.preventDefault();
+            var form = event.target;
+            var formData = new FormData(form);
+            var btn = document.getElementById("bridge-submit-btn");
+            var origText = btn ? btn.textContent : "";
+
+            showBridgeStatus("Requesting unsigned credential from server...", false);
+            if (btn) { btn.disabled = true; btn.textContent = "Signing..."; }
+
+            fetch("{% url 'generate_credential' %}", {
+                method: "POST",
+                body: formData,
+                headers: { "X-CSRFToken": document.querySelector("meta[name=csrf-token]").getAttribute("content") }
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.unsigned_credential) throw new Error("No unsigned credential returned");
+                showBridgeStatus("Sending to Sovereign Bridge (:9001) for signing...", false);
+                return signCredentialViaBridge(data.unsigned_credential)
+                    .then(function (signedVC) {
+                        showBridgeStatus("Storing signed credential...", false);
+                        return fetch("{% url 'store_signed_credential' %}", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-CSRFToken": document.querySelector("meta[name=csrf-token]").getAttribute("content")
+                            },
+                            body: JSON.stringify({
+                                signed_credential: signedVC,
+                                credential_name: data.credential_name,
+                                credential_type: data.credential_type,
+                                scope_value: data.scope_value
+                            })
+                        });
+                    });
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+                if (result.success) {
+                    showBridgeStatus("Credential stored successfully!", false);
+                    document.getElementById("generate-credential-modal").classList.add("hidden");
+                    htmx.trigger("body", "htmx:load");
+                    location.reload();
+                } else {
+                    throw new Error(result.error || "Store failed");
+                }
+            })
+            .catch(function (err) {
+                showBridgeStatus("Error: " + err.message, true);
+            })
+            .finally(function () {
+                if (btn) { btn.disabled = false; btn.textContent = origText; }
+            });
+
+            return false;
+        }
+
+        function copyToClipboard(elementId, event) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent || element.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                // Show a nice notification
+                const button = event.target;
+                const originalText = button.textContent;
+                button.textContent = "Copied!";
+                button.classList.remove("bg-gray-200", "hover:bg-gray-300");
+                button.classList.add("bg-green-200");
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.classList.remove("bg-green-200");
+                    button.classList.add("bg-gray-200", "hover:bg-gray-300");
+                }, 2000);
+            }).catch(err => {
+                console.error("Failed to copy: ", err);
+                alert("Failed to copy to clipboard. Please try again.");
+            });
+        }
+
+        function confirmDelete(vcId, vcName) {
+            if (confirm(`Are you sure you want to delete "${vcName}"? This action cannot be undone.`)) {
+                fetch("{% url 'delete_credential' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name=csrf-token]').getAttribute('content')
+                    },
+                    body: JSON.stringify({
+                        vc_id: vcId
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Remove the credential from the UI
+                        const credentialElement = document.querySelector(`[data-vc-id="${vcId}"]`).closest('.bg-gray-50');
+                        if (credentialElement) {
+                            credentialElement.remove();
+                        }
+
+                        // If no credentials left, show the empty state
+                        if (document.querySelectorAll('.bg-gray-50').length === 0) {
+                            const container = document.querySelector('#vc-container > div:last-child');
+                            container.innerHTML = `
+                                <div class="text-center py-8 bg-gray-50 rounded-lg">
+                                    <p class="text-gray-600 mb-4">No other credentials yet.</p>
+                                    <p class="text-sm text-gray-500 mb-4">Add credentials to represent group memberships, professional certifications, or other attributes.</p>
+                                    <div class="space-x-2">
+                                        <button hx-get="{% url 'generate_credential' %}" hx-target="#generate-credential-modal" hx-swap="innerHTML" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                            Generate Credential
+                                        </button>
+                                        <button hx-get="{% url 'import_credential' %}" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                            Import Credential
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        alert(data.error || 'Failed to delete credential.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while deleting the credential.');
+                });
+            }
+        }
+    </script>
+    <!-- Generate Credential Modal -->
+    <div id="generate-credential-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50 flex items-center justify-center">
+        <div class="relative top-0 mx-auto p-6 border w-full max-w-md shadow-2xl rounded-lg bg-white">
+            <div class="absolute top-0 right-0 p-2">
+                <button onclick="document.getElementById('generate-credential-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="text-center">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Generate New Credential</h3>
+                <div class="text-left">
+                    {% include "accounts/partials/generate_credential_form.html" %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Show generate credential modal
+        document.addEventListener('DOMContentLoaded', function() {
+            const generateButtons = document.querySelectorAll('[hx-target="#generate-credential-modal"]');
+            generateButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.getElementById('generate-credential-modal').classList.remove('hidden');
+                });
+            });
+        });
+    </script>
+{% endblock %}

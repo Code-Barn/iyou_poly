@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Polly{% endblock %}
+
+{% block content %}
+    <div class="max-w-4xl mx-auto mt-8">
+        <div class="bg-white shadow rounded-lg p-6 text-center">
+            <h2 class="text-2xl font-bold text-gray-900 mb-2">Login to Polly</h2>
+            <p class="text-gray-600 mb-6">
+                Authenticate via the Sovereign Mesh to access the polling dashboard.
+            </p>
+            <a
+                href="{% url 'oidc_authentication_init' %}"
+                class="inline-block bg-blue-600 text-white py-3 px-8 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 font-medium"
+            >
+                Login with Sovereign Identity
+            </a>
+            <p class="text-sm text-gray-500 mt-4">
+                You will be redirected to the Identity Provider to authenticate.
+            </p>
+        </div>
+    </div>
+{% endblock %}

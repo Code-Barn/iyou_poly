@@ -1,0 +1,28 @@
+<div class="bg-gray-50 rounded-lg p-4">
+    <h3 class="text-lg font-medium text-gray-900 mb-3">Results</h3>
+    {% with total_votes=poll.votes.count %}
+        {% if total_votes > 0 %}
+            <div class="space-y-2">
+                {% for option in poll.options.all %}
+                    {% with vote_count=option.vote_options.count %}
+                        <div class="flex items-center">
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div
+                                    class="bg-blue-600 h-2.5 rounded-full"
+                                    style="width: {% if total_votes > 0 %}{% widthratio vote_count total_votes 100 %}%{% else %}0{% endif %}"
+                                ></div>
+                            </div>
+                            <span class="ml-3 text-sm text-gray-600">
+                                {{ option.text }} • {{ vote_count }} vote{{ vote_count|pluralize }}
+                            </span>
+                        </div>
+                    {% endwith %}
+                {% endfor %}
+            </div>
+            <p class="text-sm text-gray-500 mt-2">
+                Total votes: {{ total_votes }}
+            </p>
+    {% else %}
+        <p class="text-gray-500">No votes yet.</p>
+    {% endif %}
+</div>

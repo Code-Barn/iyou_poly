@@ -1,0 +1,51 @@
+[project]
+name = "polly"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=6.0",
+    "django-debug-toolbar>=6.1.0",
+    "django-environ>=0.12.0",
+    "djangorestframework>=3.16.1",
+    "gunicorn>=23.0.0",
+    "mozilla-django-oidc>=5.0.2",
+    "playwright>=1.57.0",
+    "psycopg2-binary>=2.9.10",
+    "pydid>=0.1.0",
+    "pytest>=9.0.2",
+    "pytest-playwright>=0.7.2",
+    "web3>=7.14.1",
+]
+
+[dependency-groups]
+dev = [
+    "django-debug-toolbar>=6.1.0",
+    "playwright>=1.57.0",
+    "pytest>=9.0.2",
+    "pytest-django>=4.10.0",
+    "pytest-playwright>=0.7.2",
+    "ruff>=0.14.10",
+]
+
+[tool.uv.workspace]
+members = [
+    "did-auth",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = [
+    "apps",
+    "tests",
+]
+python_files = ["test_*.py"]
+markers = [
+    "bridge: marks tests that require the Tauri bridge on :9001 (deselect with '-m \"not bridge\"')",
+    "slow: marks tests as slow running",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

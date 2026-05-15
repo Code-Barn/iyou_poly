@@ -1,0 +1,43 @@
+<!-- polly/templates/partials/_form_input.html -->
+<div class="mb-4">
+    {% if label %}
+        <label for="{{ id }}" class="block text-sm font-medium text-gray-700">
+            {{ label }}
+            {% if required %}<span class="text-red-500">*</span>{% endif %}
+        </label>
+    {% endif %}
+    {% if type == 'textarea' %}
+        <textarea
+            name="{{ name }}"
+            id="{{ id }}"
+            rows="{{ rows|default:3 }}"
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            {% if required %}required{% endif %}
+            {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+            {% if aria_label %}aria-label="{{ aria_label }}"{% endif %}
+        >{{ value|default:"" }}</textarea>
+    {% else %}
+        <input
+            type="{{ type|default:'text' }}"
+            name="{{ name }}"
+            id="{{ id }}"
+            value="{{ value|default:"" }}"
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            {% if required %}required{% endif %}
+            {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+            {% if aria_label %}aria-label="{{ aria_label }}"{% endif %}
+        >
+    {% endif %}
+    {% if errors %}
+        <p class="mt-1 text-sm text-red-600">
+            {% for error in errors %}
+                {{ error }}<br>
+            {% endfor %}
+        </p>
+    {% endif %}
+    {% if help_text %}
+        <p class="mt-1 text-sm text-gray-500">
+            {{ help_text }}
+        </p>
+    {% endif %}
+</div>

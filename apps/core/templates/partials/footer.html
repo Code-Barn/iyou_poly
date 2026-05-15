@@ -1,0 +1,17 @@
+<!-- polly/templates/partials/footer.html -->
+{% load static %}
+<footer class="bg-white dark:bg-gray-800 shadow-inner mt-8">
+    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">&copy; {% now "Y" %} Polly. All rights reserved.</p>
+        <img id="footer-logo" src="" alt="Created in DeKalb" class="h-24" data-light="{% static 'createdinDeKalb.png' %}" data-dark="{% static 'createdinDeKalb_DM.png' %}">
+    </div>
+</footer>
+<script>
+    (function() {
+        const fl = document.getElementById('footer-logo');
+        if (fl) {
+            const isDark = document.documentElement.classList.contains('dark');
+            fl.src = isDark ? fl.dataset.dark : fl.dataset.light;
+        }
+    })();
+</script>

@@ -1,0 +1,66 @@
+<div id="vote-form-{{ poll.id }}" class="space-y-4">
+    {# Debug user_vote #}
+    <script>
+        console.log("user_vote in template:", {% if user_vote %}{
+            id: {{ user_vote.id }},
+            option: {
+                id: {{ user_vote.option.id }},
+                text: "{{ user_vote.option.text }}"
+            },
+            user: "{{ user_vote.user.username }}"
+        }{% else %}null{% endif %});
+    </script>
+
+    {% if user_vote %}
+        <div class="bg-green-50 border-l-4 border-green-400 p-4 mb-6" role="alert" aria-label="Your vote confirmation">
+            <p class="text-green-700">
+                You voted for <strong>{{ user_vote.option.text }}</strong>.
+            </p>
+        </div>
+    {% endif %}
+
+    <div class="space-y-3" role="radiogroup" aria-labelledby="vote-form-heading-{{ poll.id }}">
+        {% for option in poll.options.all %}
+            <div class="flex items-center justify-between w-full" role="radio" aria-checked="{% if user_vote and user_vote.option.id == option.id %}true{% else %}false{% endif %}">
+                <div class="flex items-center">
+                    <input
+                        type="radio"
+                        name="option"
+                        id="option-{{ option.id }}"
+                        value="{{ option.id }}"
+                        class="h-4 w-4 text-[color:var(--primary-color)] border-gray-300 rounded focus:ring-[color:var(--primary-focus)]"
+                        {% if user_vote and user_vote.option.id == option.id %}checked{% endif %}
+                        {% if user_vote %}disabled{% endif %}
+                        aria-label="Vote for {{ option.text }}"
+                    >
+                    <label
+                        for="option-{{ option.id }}"
+                        class="ml-3 block text-gray-700 {% if user_vote and user_vote.option.id == option.id %}font-semibold{% endif %}"
+                    >
+                        {{ option.text }}
+                    </label>
+                </div>
+                {% if not user_vote %}
+                    <form
+                        hx-post="{% url 'vote_api' poll.id %}"
+                        hx-target="#vote-form-{{ poll.id }}"
+                        hx-swap="outerHTML"
+                        hx-target-2="#vote-results-{{ poll.id }}"
+                        hx-swap-2="innerHTML"
+                        class="inline"
+                    >
+                        <input type="hidden" name="option_id" value="{{ option.id }}">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                        <button
+                            type="submit"
+                            class="bg-[color:var(--primary-color)] text-white px-4 py-2 rounded-md hover:bg-[color:var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[color:var(--primary-focus)]"
+                            aria-label="Submit vote for {{ option.text }}"
+                        >
+                            Vote
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</div>
