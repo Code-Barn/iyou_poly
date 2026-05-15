@@ -15,6 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
@@ -33,7 +34,6 @@ urlpatterns = [
     path("", poll_list, name="poll_list"),
     path("", include("apps.core.urls")),
     path("", include("apps.poller.urls")),
-    path("__debug__/", include("debug_toolbar.urls")),
     path("oidc/", include("mozilla_django_oidc.urls")),
     path("login/", RedirectView.as_view(pattern_name="oidc_authentication_init"), name="login"),
     path("logout/", RedirectView.as_view(pattern_name="oidc_logout"), name="logout"),
@@ -43,3 +43,6 @@ urlpatterns = [
     path("credentials/delete/", DeleteCredentialView.as_view(), name="delete_credential"),
     path("credentials/import/", ImportCredentialView.as_view(), name="import_credential"),
 ]
+
+if settings.DEBUG:
+    urlpatterns += [path("__debug__/", include("debug_toolbar.urls"))]

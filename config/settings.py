@@ -54,9 +54,6 @@ LOGGING = {
     },
 }
 
-if DEBUG:
-    INTERNAL_IPS = ["127.0.0.1"]
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -70,6 +67,9 @@ SECRET_KEY = env.str(
 )
 
 DEBUG = env.bool("POLY_DEBUG")
+
+if DEBUG:
+    INTERNAL_IPS = ["127.0.0.1"]
 
 ALLOWED_HOSTS = env.list("POLY_ALLOWED_HOSTS")
 
