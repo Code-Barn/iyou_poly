@@ -292,8 +292,15 @@ class Vote(models.Model):
 
     # Cryptographic verification
     signature = models.TextField(
+        null=True,
         blank=True,
         help_text=_("Cryptographic signature from voter's DID key."),
+    )
+    merkle_root = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_("Merkle root of vote batch for cryptographic verification."),
     )
     credential_cid = models.CharField(
         max_length=255,
@@ -343,7 +350,8 @@ class Vote(models.Model):
         unique_together = ("poll", "voter_did")
 
     def __str__(self):
-        return f"{self.voter_did} voted for {self.option.text} in {self.poll.title}"
+        identity = self.user.username if self.user else self.voter_did
+        return f"{identity} cast vote for '{self.option.text}' in [{self.poll.title}]"
 
 
 class FederatedPoll(FederatedData):

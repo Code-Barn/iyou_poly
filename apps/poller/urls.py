@@ -8,20 +8,20 @@ including endpoints for managing polls and votes, as well as server-side rendere
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from apps.poller.embed import EmbeddablePollWidget
 from apps.poller.views import (
     CastVoteAPIView,
     CheckVotingEligibilityAPIView,
     CreatePollView,
     PollViewSet,
     VoteViewSet,
+    get_votes,
     poll_api,
     poll_detail,
     poll_detail_api,
     poll_list,
     vote_api,
-    get_votes,
 )
-from apps.poller.embed import EmbeddablePollWidget
 
 router = DefaultRouter()
 router.register(r"api/polls", PollViewSet, basename="poll")

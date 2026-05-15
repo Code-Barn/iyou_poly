@@ -16,37 +16,30 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.contrib.auth import views as auth_views
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from apps.accounts.views import (
     DeleteCredentialView,
-    DIDLoginView,
     GenerateCredentialView,
-    GenerateDIDAndVCView,
     ImportCredentialView,
-    LoginRedirectView,
-    RegisterView,
-    UpdateVCNameView,
+    StoreSignedCredentialView,
     VCManagementView,
 )
 from apps.poller.views import poll_list
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("", poll_list, name="poll_list"),  # Home page - poll list
+    path("", poll_list, name="poll_list"),
     path("", include("apps.core.urls")),
     path("", include("apps.poller.urls")),
-    path("__debug__/", include("debug_toolbar.urls")),  # Django Debug Toolbar
+    path("__debug__/", include("debug_toolbar.urls")),
     path("oidc/", include("mozilla_django_oidc.urls")),
-    path("login/", LoginRedirectView.as_view(), name="login"), # Redirect to OIDC authentication
-    path("login/", include("mozilla_django_oidc.urls")), # OIDC authentication endpoints
-    path("register/", RegisterView.as_view(), name="register"), # DID registration
-    path("logout/", auth_views.LogoutView.as_view(), name="logout"),
-    path(
-        "login/did/",
-        DIDLoginView.as_view(),
-        name="did_login",
-    ),
-
+    path("login/", RedirectView.as_view(pattern_name="oidc_authentication_init"), name="login"),
+    path("logout/", RedirectView.as_view(pattern_name="oidc_logout"), name="logout"),
+    path("credentials/", VCManagementView.as_view(), name="vc_management"),
+    path("credentials/store-signed/", StoreSignedCredentialView.as_view(), name="store_signed_credential"),
+    path("credentials/generate/", GenerateCredentialView.as_view(), name="generate_credential"),
+    path("credentials/delete/", DeleteCredentialView.as_view(), name="delete_credential"),
+    path("credentials/import/", ImportCredentialView.as_view(), name="import_credential"),
 ]

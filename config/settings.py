@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import environ
+
 """
 Django settings for config project.
 
@@ -11,6 +13,14 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
+
+env = environ.Env(
+    POLY_DEBUG=(bool, True),
+    POLY_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
+    GUNICORN_WORKERS=(int, 4),
+)
+
+environ.Env.read_env()
 
 # Logging configuration
 LOGGING = {
@@ -53,16 +63,17 @@ INTERNAL_IPS = [
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
+# Quick-start development settings — unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-krg5-y#ck3o%elpl_nwsv1!+a+g6b0g&3pa%7kx=)yh47ylh_#"
+SECRET_KEY = env.str(
+    "POLY_SECRET_KEY",
+    default="django-insecure-krg5-y#ck3o%elpl_nwsv1!+a+g6b0g&3pa%7kx=)yh47ylh_#",
+)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool("POLY_DEBUG")
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = env.list("POLY_ALLOWED_HOSTS")
 
 
 # Application definition
@@ -114,38 +125,22 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 
-# Database
+# Database — Postgres via DATABASE_URL, fallback to sqlite
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": env.db_url(
+        "DATABASE_URL",
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+    ),
 }
 
 
-# Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
+# Password validation disabled — all auth is OIDC/DID based
+AUTH_PASSWORD_VALIDATORS = []
 
 AUTHENTICATION_BACKENDS = [
-    "apps.accounts.backends.DIDAuthBackend",
-    "apps.accounts.backends.OIDCAuthBackend",
+    "apps.accounts.backends.MyOIDCAuthenticationBackend",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -168,23 +163,55 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "apps" / "core" / "static"]
+STATIC_ROOT = env.str("POLY_STATIC_ROOT", default=str(BASE_DIR / "staticfiles"))
+MEDIA_ROOT = env.str("POLY_MEDIA_ROOT", default=str(BASE_DIR / "media"))
 
 # Authentication
 LOGIN_REDIRECT_URL = "poll_list"
 LOGOUT_REDIRECT_URL = "poll_list"
+LOGIN_URL = "oidc_authentication_init"
+
+# Session cookie — unique name to prevent collisions with WUN/IdP on 127.0.0.1
+SESSION_COOKIE_NAME = "polly_sessionid"
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_DOMAIN = None
+SESSION_SAVE_EVERY_REQUEST = True
 
 # OIDC Settings
-OIDC_RP_CLIENT_ID = "polly-django"
-OIDC_RP_CLIENT_SECRET = "polly-secret" # In production this would be in .env
+OIDC_RP_CLIENT_ID = "099120"
+OIDC_RP_CLIENT_SECRET = "59b0d3aa8f6f5ff82384c6d4502420f72688d36267added38db4d68c"
 OIDC_RP_SIGN_ALGO = "RS256"
+OIDC_RP_VERIFY_KID = False
 
-OIDC_OP_AUTHORIZATION_ENDPOINT = "http://localhost:8000/authorize"
-OIDC_OP_TOKEN_ENDPOINT = "http://localhost:8000/token"
-OIDC_OP_USER_ENDPOINT = "http://localhost:8000/userinfo"
-OIDC_OP_JWKS_ENDPOINT = "http://localhost:8000/jwks"
+# All OIDC endpoints use 127.0.0.1:8000 (the IdP) — configurable via env
+OIDC_OP_AUTHORIZATION_ENDPOINT = env.str(
+    "OIDC_OP_AUTHORIZATION_ENDPOINT",
+    default="http://127.0.0.1:8000/openid/authorize/",
+)
+OIDC_OP_TOKEN_ENDPOINT = env.str(
+    "OIDC_OP_TOKEN_ENDPOINT",
+    default="http://127.0.0.1:8000/openid/token/",
+)
+OIDC_OP_USER_ENDPOINT = env.str(
+    "OIDC_OP_USER_ENDPOINT",
+    default="http://127.0.0.1:8000/openid/userinfo/",
+)
+OIDC_OP_JWKS_ENDPOINT = env.str(
+    "OIDC_OP_JWKS_ENDPOINT",
+    default="http://127.0.0.1:8000/openid/jwks/",
+)
 
-# Treat sub claim as DID
-OIDC_USERNAME_ALGO = "apps.accounts.utils.did_utils.generate_username_from_sub"
+# Callback must use 127.0.0.1 to match session domain
+OIDC_RP_CALLBACK_URL = "http://127.0.0.1:8002/oidc/callback/"
+
+# Treat sub claim as DID — map directly to username
+OIDC_USERNAME_ALGO = lambda claims: claims.get("sub")
+
+# Bypass email requirement — we use DIDs, not email
+OIDC_RP_REQUIRED_CLAIMS = []
+OIDC_VERIFY_SSL = False
+OIDC_STORE_ID_TOKEN = True
 
 # Federated Identity and Trust Management
 # https://docs.djangoproject.com/en/6.0/topics/auth/customizing/

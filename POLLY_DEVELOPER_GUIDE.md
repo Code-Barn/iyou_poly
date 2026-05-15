@@ -11,7 +11,7 @@ The current implementation fully supports **Polly Protocol Spec v1** within the 
 #### **Omni-Stack Integration**
 
 Polly serves as the **Governance Layer** in the Omni-Stack:
-- **Identity Layer**: Uses `did_rust` for DID-based authentication
+- **Identity Layer**: Uses OIDC (via `iyou_idp`) for authentication; username is the IdP `sub` claim
 - **Messaging Layer**: Integrates with Nostr for poll event distribution
 - **Storage Layer**: Publishes to Blossom/IPFS for content-addressed storage
 - **Governance Layer**: Provides verifiable polling and auditing
@@ -32,16 +32,16 @@ Polly serves as the **Governance Layer** in the Omni-Stack:
 - **Requirement**: All votes must include cryptographic signatures
 - **Implementation**: 
   - `Vote.signature` field stores cryptographic signatures
-  - API endpoints use the internal `did_rust` library for signature generation
+  - Server uses `hashlib.sha256` as a placeholder (bridge signing pending)
   - Votes without signatures are rejected by the system
 - **Verification**: Votes are marked as verified with `is_verified=True` flag
 
 #### **Cryptographic Voting Flow**
 
-1. **User Authentication**: OIDC-based authentication with DID mapping via `iyou_idp`
+1. **User Authentication**: OIDC-based authentication via `iyou_idp`; username mapped from `sub` claim
 2. **Vote Casting**: 
-   - Client sends vote data with DID
-   - Server generates cryptographic signature using the internal `did_rust` library
+   - Client sends vote data
+   - Server generates SHA-256 hash as signature placeholder (bridge signing pending)
    - Vote stored with signature in database
 3. **Ledger Anchoring**: 
    - Periodic Merkle root calculation from signatures via `anchor_ledger` command
@@ -49,6 +49,34 @@ Polly serves as the **Governance Layer** in the Omni-Stack:
 4. **Verification**: 
    - Users can verify votes by recalculating Merkle roots
    - "Verify on Desktop" mechanism exports signed vote history for local verification via `iyou_home`
+
+#### **Signature Bridge Protocol (Port 9001)**
+
+Polly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_home` at `ws://127.0.0.1:9001`). The server never holds private keys.
+
+**WebSocket Message Types:**
+
+| Type | Payload | Response | Purpose |
+|------|---------|----------|---------|
+| `sign` | `{ challenge: "<uuid>" }` | `{ type: "signed", challenge, signature }` | IdP login proof — builds a Verifiable Presentation from the challenge |
+| `sign_event` | `{ kind, content, tags, ... }` | `{ type: "signed_event", event }` | Nostr event signing for mesh distribution |
+| `sign_credential` | `{ credential: { ...unsigned VC... } }` | `{ type: "signed_credential", vc: { ...signed VC... } }` | VC issuance — bridge stamps `proof` block on the unsigned credential |
+
+**JavaScript Flow (credential issuance):**
+```
+POST /credentials/generate/    → unsigned VC JSON
+  → signCredentialViaBridge()  → ws://127.0.0.1:9001 sign_credential
+  → bridge responds with signed VC (proof block added)
+POST /credentials/store-signed/ → stored in user.vcs
+```
+
+**Private Network Access (PNA) for Safari:** Because the bridge lives on `127.0.0.1:9001` and Polly runs on `127.0.0.1:8002`, Safari requires a **Private Network Access** preflight. The bridge must respond to HTTP GET `/` with the header:
+```
+Access-Control-Allow-Private-Network: true
+```
+This header is sent by `iyou_home`'s HTTP listener (serving the mesh probe at `:9001`). Without it, Safari blocks WebSocket connections to the bridge.
+
+**Mesh Probe:** The nav badge (`_nav.html`) probes `http://127.0.0.1:9001/` via `fetch` with a 300ms timeout. If the bridge responds, "Sovereign Mesh Active" badge appears. This is used both as a health check and as the PNA handshake trigger.
 
 #### **Sovereign Spectrum Support**
 
@@ -162,23 +190,26 @@ Polly implements both participation modes defined in the Omni-Social Meta-Protoc
 - `sync_poll_option_on_save`: Option change synchronization
 
 **Known Issues:**
-- Vote count synchronization may increment multiple times
 - Federated poll versioning can be inconsistent
 - No conflict resolution for simultaneous votes
 
 ### Authentication System
 
+**Identity Model:**
+- **Passwords are DEPRECATED.** The project uses OIDC + DID exclusively. No password-based backends are registered; no standard Django login views are used.
+- **Primary entry point:** `http://127.0.0.1:8002/oidc/authenticate/` redirects to `iyou_idp` at `http://127.0.0.1:8000/openid/authorize/`. The IdP returns the `sub` claim, which becomes the user's `username` (the DID).
+- **Session:** `polly_sessionid` cookie, `SameSite=Lax`, `HttpOnly=True`. Prevents collisions with WUN/IdP cookies.
+
 **Current Implementation:**
-- ✅ Traditional Django auth
-- ✅ DID-based authentication
-- ✅ OIDC providers (Google, GitHub)
-- ✅ Hybrid authentication support
-- ✅ Credential-based authorization
+- ✅ OIDC-only authentication via `mozilla-django-oidc` + `MyOIDCAuthenticationBackend`
+- ✅ Username = IdP `sub` claim (no separate DID field for new users)
+- ✅ Credential-based authorization via `User.vcs` JSONField
+- ❌ Traditional password auth removed
+- ❌ DID-based backends (`DIDAuthBackend`, `OIDCAuthBackend`) removed
 
 **Models:**
-- `CustomUser`: Extended user model with DID support
-- `DID`: Decentralized identifier management
-- `VerifiableCredential`: VC storage and verification
+- `CustomUser`: Extended user model; `username` holds the IdP `sub`; `did`/`did_key`/`did_method` fields deprecated (kept for legacy data); `vcs` JSONField active for VC storage
+- `DID`: Model retained for backward compatibility with existing poll/vote FK data; not used for new users
 
 ### Federation Protocol
 
@@ -213,7 +244,6 @@ Polly implements both participation modes defined in the Omni-Social Meta-Protoc
 ### Critical Issues
 
 1. **Federation Consistency:**
-   - Vote count synchronization can increment multiple times
    - Version vectors may not handle concurrent updates correctly
    - No transactional consistency across nodes
 
@@ -419,8 +449,8 @@ uv run python manage.py runserver
    - `apps/poller/views.py` - API and template views
 
 3. **Authentication:**
-   - `apps/accounts/models.py` - User and DID models
-   - `apps/accounts/utils/did_utils.py` - DID utilities
+   - `apps/accounts/models.py` - User model with VC storage
+   - `apps/accounts/backends.py` - `MyOIDCAuthenticationBackend` (OIDC identity bridge)
 
 ### Testing
 

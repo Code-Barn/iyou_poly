@@ -9,12 +9,14 @@ class User(AbstractUser):
     Custom User model with support for Decentralized Identifiers (DIDs).
     """
 
+    # Deprecated: Identity is now strictly username (the OIDC sub claim / DID).
+    # These fields remain for backward compatibility with existing poll/vote data.
     did = models.CharField(
         max_length=255,
         unique=True,
         null=True,
         blank=True,
-        help_text="Decentralized Identifier (DID) for the user.",
+        help_text="[DEPRECATED] Identity now sourced from username (OIDC sub).",
     )
     vcs = models.JSONField(
         default=list,
@@ -46,14 +48,16 @@ class User(AbstractUser):
             self.vcs = vcs
             self.save()
 
+    # Deprecated: legacy field no longer actively used.
     did_method = models.CharField(
         max_length=50,
         default="key",
-        help_text="The DID method used for this user's DID (e.g., 'key', 'web').",
+        help_text="[DEPRECATED] DID method from legacy self-sovereign keygen.",
     )
+    # Deprecated: signing now happens via the Tauri bridge (:9001), not server-side.
     did_key = models.TextField(
         blank=True,
-        help_text="The private key associated with this user's DID (in JWK format).",
+        help_text="[DEPRECATED] Private key from legacy self-sovereign keygen.",
     )
 
     def __str__(self):

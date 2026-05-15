@@ -346,10 +346,10 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
             # Get user's DIDs
             dids = user.dids.filter(is_primary=True)
 
-            # Also check legacy user.did field
+            # username is the DID from OIDC
             all_did_uris = [did.did_uri for did in dids]
-            if user.did and user.did not in all_did_uris:
-                all_did_uris.append(user.did)
+            if user.username not in all_did_uris:
+                all_did_uris.append(user.username)
 
             if not all_did_uris:
                 return JsonResponse(
@@ -455,27 +455,18 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                     status=403,
                 )
 
-        # Create the vote with cryptographic signature
-        voter_did = user.did or f"did:key:unknown_{user.id}"
+        # Create the vote with cryptographic signature for audit trail
+        voter_did = user.username  # username IS the DID from OIDC
 
-        # Prepare data to sign
+        # Prepare data to hash for audit trail
+        import hashlib
         sign_data = {
             "poll_id": poll.id,
             "option_id": option.id,
             "voter_did": voter_did,
             "timestamp": datetime.datetime.now().isoformat()
         }
-
-        signature = ""
-        if user.did_key:
-            try:
-                import didkit
-                signature = didkit.signMessage(json.dumps(sign_data), {}, user.did_key)
-            except Exception as e:
-                logger.error(f"Error signing vote: {e}")
-                # Fallback to a simple hash if didkit fails for some reason
-                import hashlib
-                signature = hashlib.sha256(json.dumps(sign_data).encode()).hexdigest()
+        signature = hashlib.sha256(json.dumps(sign_data, sort_keys=True).encode()).hexdigest()
 
         Vote.objects.create(
             poll=poll,
@@ -486,9 +477,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
             is_verified=True
         )
 
-        # Increment the vote count on the option
-        option.votes = option.votes + 1
-        option.save()
+        # Counter increment handled by post_save signal on Vote
 
         # For HTMX requests, we'll handle the response in vote_api
         # For non-HTML requests, return a simple success response
@@ -966,26 +955,21 @@ class CastVoteAPIView(APIView):
                 {"error": "Option not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
-        # Get user from DID if possible
+        # Get user by DID (username is the DID from OIDC)
         try:
-            user = User.objects.get(did=voter_did)
+            user = User.objects.get(username=voter_did)
         except User.DoesNotExist:
             user = None
 
-        # Sign the vote if we have the user's key
-        signature = data.get("signature", "")
-        if not signature and user and user.did_key:
-            try:
-                import didkit
-                sign_data = {
-                    "poll_id": poll.id,
-                    "option_id": option.id,
-                    "voter_did": voter_did,
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
-                signature = didkit.signMessage(json.dumps(sign_data), {}, user.did_key)
-            except Exception as e:
-                logger.error(f"Error signing API vote: {e}")
+        # Generate audit trail hash (bridge signing for votes comes later)
+        import hashlib
+        sign_data = {
+            "poll_id": poll.id,
+            "option_id": option.id,
+            "voter_did": voter_did,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        signature = data.get("signature", "") or hashlib.sha256(json.dumps(sign_data, sort_keys=True).encode()).hexdigest()
 
         vote = Vote.objects.create(
             poll=poll,
@@ -999,8 +983,7 @@ class CastVoteAPIView(APIView):
             verification_details={"credential_verified": True},
         )
 
-        option.votes += 1
-        option.save()
+        # Counter increment handled by post_save signal on Vote
 
         return Response(
             {
@@ -1167,9 +1150,9 @@ def poll_list(request: HttpRequest) -> HttpResponse:
         dids = request.user.dids.filter(is_primary=True)
         did_uris = [did.did_uri for did in dids]
 
-        # Also check legacy user.did field
-        if request.user.did and request.user.did not in did_uris:
-            did_uris.append(request.user.did)
+        # username is the DID from OIDC
+        if request.user.username not in did_uris:
+            did_uris.append(request.user.username)
 
         # Check CredentialIssuance table
         for did_uri in did_uris:
@@ -1267,9 +1250,9 @@ class CreatePollView(View):
             dids = request.user.dids.filter(is_primary=True)
             did_uris = [did.did_uri for did in dids]
 
-            # Also check legacy user.did field
-            if request.user.did and request.user.did not in did_uris:
-                did_uris.append(request.user.did)
+            # username is the DID from OIDC
+            if request.user.username not in did_uris:
+                did_uris.append(request.user.username)
 
             # Check CredentialIssuance table
             if did_uris:
