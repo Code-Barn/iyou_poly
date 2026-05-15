@@ -2,7 +2,10 @@
 {% load static %}
 <footer class="bg-white dark:bg-gray-800 shadow-inner mt-8">
     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-        <p class="text-sm text-gray-500 dark:text-gray-400">&copy; {% now "Y" %} Poly. All rights reserved.</p>
+        <div class="flex items-center gap-3">
+            <img id="footer-poly-logo" src="" alt="Poly" class="h-8" data-light="{% static 'poly_logo.png' %}" data-dark="{% static 'poly_logo_DM.png' %}">
+            <p class="text-sm text-gray-500 dark:text-gray-400">&copy; {% now "Y" %} Poly. All rights reserved.</p>
+        </div>
         <img id="footer-logo" src="" alt="Created in DeKalb" class="h-24" data-light="{% static 'createdinDeKalb.png' %}" data-dark="{% static 'createdinDeKalb_DM.png' %}">
     </div>
 </footer>
@@ -12,6 +15,11 @@
         if (fl) {
             const isDark = document.documentElement.classList.contains('dark');
             fl.src = isDark ? fl.dataset.dark : fl.dataset.light;
+        }
+        const pl = document.getElementById('footer-poly-logo');
+        if (pl) {
+            const isDark = document.documentElement.classList.contains('dark');
+            pl.src = isDark ? pl.dataset.dark : pl.dataset.light;
         }
     })();
 </script>
