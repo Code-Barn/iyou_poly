@@ -174,7 +174,7 @@ LOGOUT_REDIRECT_URL = "poll_list"
 LOGIN_URL = "oidc_authentication_init"
 
 # Session cookie — unique name to prevent collisions with WUN/IdP on 127.0.0.1
-SESSION_COOKIE_NAME = "polly_sessionid"
+SESSION_COOKIE_NAME = "poly_sessionid"
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_DOMAIN = None

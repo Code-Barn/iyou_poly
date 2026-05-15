@@ -1,5 +1,5 @@
 [project]
-name = "polly"
+name = "poly"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -23,11 +23,6 @@ dev = [
     "pytest-playwright>=0.7.2",
     "ruff>=0.14.10",
     "web3>=7.14.1",
-]
-
-[tool.uv.workspace]
-members = [
-    "did-auth",
 ]
 
 [tool.pytest.ini_options]
