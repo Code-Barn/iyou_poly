@@ -1,8 +1,8 @@
-# Polly Community Code of Conduct
+# Poly Community Code of Conduct
 
 ## **Our Pledge**
 
-We, as contributors and maintainers of the Polly project, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
+We, as contributors and maintainers of the Poly project, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
 We are committed to creating a welcoming and inclusive environment where all contributors feel valued and respected.
 
@@ -38,7 +38,7 @@ This Code of Conduct applies both within project spaces and in public spaces whe
 
 ## **Enforcement**
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [conduct@polly.example.com](mailto:conduct@polly.example.com). All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [conduct@poly.example.com](mailto:conduct@poly.example.com). All complaints will be reviewed and investigated promptly and fairly.
 
 Project maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project's leadership.
 

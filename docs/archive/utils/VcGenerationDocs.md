@@ -2,11 +2,11 @@
 
 ## Overview
 
-This document explains the VC (Verifiable Credential) generation process in the Polly project, including fixes for common issues and best practices for working with VCs and the DID login system.
+This document explains the VC (Verifiable Credential) generation process in the Poly project, including fixes for common issues and best practices for working with VCs and the DID login system.
 
 ## Background
 
-The Polly project uses DIDKit for generating and verifying Verifiable Credentials according to the W3C Verifiable Credentials Data Model specification. VCs are used for authentication and authorization within the system, enabling a hybrid federated identity approach that combines:
+The Poly project uses DIDKit for generating and verifying Verifiable Credentials according to the W3C Verifiable Credentials Data Model specification. VCs are used for authentication and authorization within the system, enabling a hybrid federated identity approach that combines:
 
 - **DID-based authentication** (recommended)
 - **Traditional username/password** (fallback)
@@ -47,7 +47,7 @@ Instead of trying to define proper JSON-LD contexts for all possible fields (whi
 
 ### Implementation Details
 
-The fix is implemented in the `issue_vc` function in `/home/user/CODE_BASE/polly/apps/accounts/utils/did_utils.py`:
+The fix is implemented in the `issue_vc` function in `/home/user/CODE_BASE/poly/apps/accounts/utils/did_utils.py`:
 
 ```python
 def issue_vc(

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the voting functionality in Polly, a decentralized polling platform with credential-based authorization, family-scoped polls, and embeddable widgets.
+This document describes the voting functionality in Poly, a decentralized polling platform with credential-based authorization, family-scoped polls, and embeddable widgets.
 
 ## Features
 

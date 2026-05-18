@@ -1,6 +1,6 @@
 # Template Organization
 
-This document outlines the template organization strategy for the Polly project. The goal is to ensure consistency, reusability, scalability, and maintainability across all templates.
+This document outlines the template organization strategy for the Poly project. The goal is to ensure consistency, reusability, scalability, and maintainability across all templates.
 
 ---
 
@@ -9,7 +9,7 @@ This document outlines the template organization strategy for the Polly project.
 The project follows a structured template hierarchy to separate global, app-specific, and reusable components:
 
 ```
-polly/
+poly/
 ├── templates/                  # Project-wide templates
 │   ├── base.html               # Base template (shared layout)
 │   ├── registration/           # Authentication templates (login, register, etc.)
@@ -71,7 +71,7 @@ The `base.html` template defines the following blocks for customization:
 Static assets (CSS, JS, images) are organized as follows:
 
 ```
-polly/
+poly/
 └── static/
     ├── css/          # Global CSS files
     ├── js/           # Global JavaScript files
@@ -111,17 +111,17 @@ All templates **must** extend `base.html` and override blocks as needed:
 ## **6. Adding New Templates**
 
 ### **6.1 Project-Wide Templates**
-1. Place the template in `polly/templates/`.
+1. Place the template in `poly/templates/`.
 2. Extend `base.html` and override blocks as needed.
 3. Include reusable partials using `{% include "partials/<partial_name>.html" %}`.
 
 ### **6.2 App-Specific Templates**
-1. Place the template in `polly/apps/<app_name>/templates/<app_name>/`.
+1. Place the template in `poly/apps/<app_name>/templates/<app_name>/`.
 2. Extend `base.html` and override blocks as needed.
 3. Include reusable partials using `{% include "<app_name>/partials/<partial_name>.html" %}`.
 
 ### **6.3 Partial Templates**
-1. Place the partial in `polly/templates/partials/` (for project-wide partials) or `polly/apps/<app_name>/templates/<app_name>/partials/` (for app-specific partials).
+1. Place the partial in `poly/templates/partials/` (for project-wide partials) or `poly/apps/<app_name>/templates/<app_name>/partials/` (for app-specific partials).
 2. Include the partial in other templates using `{% include "partials/<partial_name>.html" %}`.
 
 ---
@@ -150,7 +150,7 @@ All templates **must** extend `base.html` and override blocks as needed:
 ## **8. Example Workflow**
 
 ### **8.1 Creating a New Page**
-1. Create a new template in `polly/apps/<app_name>/templates/<app_name>/<template_name>.html`.
+1. Create a new template in `poly/apps/<app_name>/templates/<app_name>/<template_name>.html`.
 2. Extend `base.html` and override the `content` block:
    ```html
    {% extends "base.html" %}
@@ -161,7 +161,7 @@ All templates **must** extend `base.html` and override blocks as needed:
        <h1>Welcome to the New Page!</h1>
    {% endblock %}
    ```
-3. Add a URL route in `polly/apps/<app_name>/urls.py`:
+3. Add a URL route in `poly/apps/<app_name>/urls.py`:
    ```python
    from django.urls import path
    from .views import NewPageView
@@ -170,7 +170,7 @@ All templates **must** extend `base.html` and override blocks as needed:
        path("new-page/", NewPageView.as_view(), name="new_page"),
    ]
    ```
-4. Add a view in `polly/apps/<app_name>/views.py`:
+4. Add a view in `poly/apps/<app_name>/views.py`:
    ```python
    from django.views import View
    from django.shortcuts import render
@@ -181,7 +181,7 @@ All templates **must** extend `base.html` and override blocks as needed:
    ```
 
 ### **8.2 Creating a Reusable Partial**
-1. Create a partial in `polly/templates/partials/_alert.html`:
+1. Create a partial in `poly/templates/partials/_alert.html`:
    ```html
    <div class="alert alert-{{ type }}">
        {{ message }}

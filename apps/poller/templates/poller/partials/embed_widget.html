@@ -1,8 +1,8 @@
 {% load static %}
-{# Embeddable Polly Widget Template #}
+{# Embeddable Poly Widget Template #}
 {# Usage: Include this template and pass poll object and theme #}
 
-<div class="polly-embed-container polly-theme-{{ theme|default:'light' }}"
+<div class="poly-embed-container poly-theme-{{ theme|default:'light' }}"
      data-embedding-app="{{ embedding_app }}"
      data-poll-id="{{ poll.id }}"
      data-user-did="{{ user_did }}"
@@ -11,100 +11,100 @@
      hx-vals='{"embedding_app": "{{ embedding_app }}", "user_did": "{{ user_did }}", "theme": "{{ theme|default:"light" }}"}'>
 
     {% if poll %}
-    <div class="polly-poll-widget">
-        <div class="polly-poll-header">
-            <h3 class="polly-poll-title">{{ poll.title }}</h3>
+    <div class="poly-poll-widget">
+        <div class="poly-poll-header">
+            <h3 class="poly-poll-title">{{ poll.title }}</h3>
             {% if poll.is_proposal %}
-            <span class="polly-badge polly-badge-proposal">Proposal</span>
+            <span class="poly-badge poly-badge-proposal">Proposal</span>
             {% endif %}
             {% if poll.poll_type == 'family_unit' %}
-            <span class="polly-badge polly-badge-family">Family</span>
+            <span class="poly-badge poly-badge-family">Family</span>
             {% elif poll.poll_type == 'family_scoped' %}
-            <span class="polly-badge polly-badge-scoped">Family-Scoped</span>
+            <span class="poly-badge poly-badge-scoped">Family-Scoped</span>
             {% endif %}
         </div>
 
         {% if poll.description %}
-        <p class="polly-poll-description">{{ poll.description }}</p>
+        <p class="poly-poll-description">{{ poll.description }}</p>
         {% endif %}
 
         {% if poll.is_proposal and poll.funding_goal %}
-        <div class="polly-funding-progress">
-            <div class="polly-funding-label">
+        <div class="poly-funding-progress">
+            <div class="poly-funding-label">
                 <span>Funding Progress</span>
                 <span>{{ poll.funding_current|floatformat:0 }} / {{ poll.funding_goal|floatformat:0 }}</span>
             </div>
-            <div class="polly-progress-bar">
-                <div class="polly-progress-fill" style="width: {{ poll.funding_progress|floatformat:0 }}%"></div>
+            <div class="poly-progress-bar">
+                <div class="poly-progress-fill" style="width: {{ poll.funding_progress|floatformat:0 }}%"></div>
             </div>
         </div>
         {% endif %}
 
-        <div class="polly-poll-options">
+        <div class="poly-poll-options">
             {% for option in poll.options %}
-            <div class="polly-poll-option">
-                <div class="polly-option-info">
-                    <span class="polly-option-text">{{ option.text }}</span>
-                    <span class="polly-option-votes">{{ option.votes }} votes</span>
+            <div class="poly-poll-option">
+                <div class="poly-option-info">
+                    <span class="poly-option-text">{{ option.text }}</span>
+                    <span class="poly-option-votes">{{ option.votes }} votes</span>
                 </div>
                 {% if option.percentage > 0 %}
-                <div class="polly-option-bar">
-                    <div class="polly-option-fill" style="width: {{ option.percentage }}%"></div>
+                <div class="poly-option-bar">
+                    <div class="poly-option-fill" style="width: {{ option.percentage }}%"></div>
                 </div>
-                <span class="polly-option-percentage">{{ option.percentage|floatformat:1 }}%</span>
+                <span class="poly-option-percentage">{{ option.percentage|floatformat:1 }}%</span>
                 {% endif %}
             </div>
             {% endfor %}
         </div>
 
-        <div class="polly-poll-meta">
-            <span class="polly-vote-count">{{ poll.total_votes }} total votes</span>
+        <div class="poly-poll-meta">
+            <span class="poly-vote-count">{{ poll.total_votes }} total votes</span>
             {% if poll.is_active_now %}
-            <span class="polly-status polly-status-active">Active</span>
+            <span class="poly-status poly-status-active">Active</span>
             {% else %}
-            <span class="polly-status polly-status-ended">Ended</span>
+            <span class="poly-status poly-status-ended">Ended</span>
             {% endif %}
         </div>
 
         {% if user_did and poll.is_active_now %}
-        <form class="polly-vote-form" hx-post="/api/polls/{{ poll.id }}/vote/" hx-vals='{"user_did": "{{ user_did }}"}'>
-            <div class="polly-vote-options">
+        <form class="poly-vote-form" hx-post="/api/polls/{{ poll.id }}/vote/" hx-vals='{"user_did": "{{ user_did }}"}'>
+            <div class="poly-vote-options">
                 {% for option in poll.options %}
-                <label class="polly-vote-label">
+                <label class="poly-vote-label">
                     <input type="radio" name="option_id" value="{{ option.id }}" required>
                     <span>{{ option.text }}</span>
                 </label>
                 {% endfor %}
             </div>
-            <button type="submit" class="polly-vote-button">Vote</button>
+            <button type="submit" class="poly-vote-button">Vote</button>
         </form>
         {% endif %}
     </div>
 
     {% else %}
-    <div class="polly-loading">
-        <div class="polly-spinner"></div>
+    <div class="poly-loading">
+        <div class="poly-spinner"></div>
         <span>Loading polls...</span>
     </div>
     {% endif %}
 
-    <div class="polly-powered-by">
+    <div class="poly-powered-by">
         <span>Powered by</span>
-        <a href="https://polly.example.com" target="_blank">Polly</a>
+        <a href="https://poly.example.com" target="_blank">Poly</a>
     </div>
 </div>
 
 <style>
-.polly-embed-container {
-    --polly-primary: #3b82f6;
-    --polly-success: #22c55e;
-    --polly-warning: #f59e0b;
-    --polly-danger: #ef4444;
-    --polly-bg: #ffffff;
-    --polly-bg-secondary: #f9fafb;
-    --polly-text: #111827;
-    --polly-text-secondary: #6b7280;
-    --polly-border: #e5e7eb;
+.poly-embed-container {
+    --poly-primary: #3b82f6;
+    --poly-success: #22c55e;
+    --poly-warning: #f59e0b;
+    --poly-danger: #ef4444;
+    --poly-bg: #ffffff;
+    --poly-bg-secondary: #f9fafb;
+    --poly-text: #111827;
+    --poly-text-secondary: #6b7280;
+    --poly-border: #e5e7eb;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     max-width: 400px;
     border-radius: 12px;
@@ -112,19 +112,19 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.polly-theme-dark .polly-embed-container {
-    --polly-bg: #1f2937;
-    --polly-bg-secondary: #374151;
-    --polly-text: #f9fafb;
-    --polly-text-secondary: #9ca3af;
-    --polly-border: #4b5563;
+.poly-theme-dark .poly-embed-container {
+    --poly-bg: #1f2937;
+    --poly-bg-secondary: #374151;
+    --poly-text: #f9fafb;
+    --poly-text-secondary: #9ca3af;
+    --poly-border: #4b5563;
 }
 
-.polly-poll-widget {
+.poly-poll-widget {
     padding: 16px;
 }
 
-.polly-poll-header {
+.poly-poll-header {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -132,146 +132,146 @@
     margin-bottom: 12px;
 }
 
-.polly-poll-title {
+.poly-poll-title {
     font-size: 18px;
     font-weight: 600;
-    color: var(--polly-text);
+    color: var(--poly-text);
     margin: 0;
 }
 
-.polly-badge {
+.poly-badge {
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 9999px;
     font-weight: 500;
 }
 
-.polly-badge-proposal { background: #fef3c7; color: #92400e; }
-.polly-badge-family { background: #dbeafe; color: #1e40af; }
-.polly-badge-scoped { background: #e0e7ff; color: #3730a3; }
+.poly-badge-proposal { background: #fef3c7; color: #92400e; }
+.poly-badge-family { background: #dbeafe; color: #1e40af; }
+.poly-badge-scoped { background: #e0e7ff; color: #3730a3; }
 
-.polly-poll-description {
-    color: var(--polly-text-secondary);
+.poly-poll-description {
+    color: var(--poly-text-secondary);
     font-size: 14px;
     margin: 0 0 16px;
 }
 
-.polly-funding-progress {
-    background: var(--polly-bg-secondary);
+.poly-funding-progress {
+    background: var(--poly-bg-secondary);
     border-radius: 8px;
     padding: 12px;
     margin-bottom: 16px;
 }
 
-.polly-funding-label {
+.poly-funding-label {
     display: flex;
     justify-content: space-between;
     font-size: 13px;
-    color: var(--polly-text-secondary);
+    color: var(--poly-text-secondary);
     margin-bottom: 8px;
 }
 
-.polly-progress-bar {
+.poly-progress-bar {
     height: 8px;
-    background: var(--polly-border);
+    background: var(--poly-border);
     border-radius: 4px;
     overflow: hidden;
 }
 
-.polly-progress-fill {
+.poly-progress-fill {
     height: 100%;
-    background: var(--polly-primary);
+    background: var(--poly-primary);
     transition: width 0.3s ease;
 }
 
-.polly-poll-options {
+.poly-poll-options {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.polly-poll-option {
+.poly-poll-option {
     display: grid;
     grid-template-columns: 1fr auto auto;
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    background: var(--polly-bg-secondary);
+    background: var(--poly-bg-secondary);
     border-radius: 8px;
 }
 
-.polly-option-info {
+.poly-option-info {
     display: flex;
     flex-direction: column;
 }
 
-.pollu-option-text { font-size: 14px; color: var(--polly-text); }
-.polly-option-votes { font-size: 12px; color: var(--polly-text-secondary); }
+.pollu-option-text { font-size: 14px; color: var(--poly-text); }
+.poly-option-votes { font-size: 12px; color: var(--poly-text-secondary); }
 
-.polly-option-bar {
+.poly-option-bar {
     height: 6px;
     width: 60px;
-    background: var(--polly-border);
+    background: var(--poly-border);
     border-radius: 3px;
     overflow: hidden;
 }
 
-.polly-option-fill {
+.poly-option-fill {
     height: 100%;
-    background: var(--polly-primary);
+    background: var(--poly-primary);
 }
 
-.polly-option-percentage {
+.poly-option-percentage {
     font-size: 13px;
     font-weight: 500;
-    color: var(--polly-text);
+    color: var(--poly-text);
     min-width: 40px;
     text-align: right;
 }
 
-.polly-poll-meta {
+.poly-poll-meta {
     display: flex;
     justify-content: space-between;
     margin-top: 12px;
     font-size: 12px;
-    color: var(--polly-text-secondary);
+    color: var(--poly-text-secondary);
 }
 
-.polly-status-active { color: var(--polly-success); }
-.polly-status-ended { color: var(--polly-danger); }
+.poly-status-active { color: var(--poly-success); }
+.poly-status-ended { color: var(--poly-danger); }
 
-.polly-vote-form {
+.poly-vote-form {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid var(--polly-border);
+    border-top: 1px solid var(--poly-border);
 }
 
-.polly-vote-options {
+.poly-vote-options {
     display: flex;
     flex-direction: column;
     gap: 8px;
     margin-bottom: 12px;
 }
 
-.polly-vote-label {
+.poly-vote-label {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 8px;
-    background: var(--polly-bg-secondary);
+    background: var(--poly-bg-secondary);
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
 }
 
-.polly-vote-label:hover {
-    background: var(--polly-border);
+.poly-vote-label:hover {
+    background: var(--poly-border);
 }
 
-.polly-vote-button {
+.poly-vote-button {
     width: 100%;
     padding: 10px;
-    background: var(--polly-primary);
+    background: var(--poly-primary);
     color: white;
     border: none;
     border-radius: 8px;
@@ -281,56 +281,56 @@
     transition: opacity 0.2s;
 }
 
-.polly-vote-button:hover { opacity: 0.9; }
+.poly-vote-button:hover { opacity: 0.9; }
 
-.polly-loading {
+.poly-loading {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 32px;
-    color: var(--polly-text-secondary);
+    color: var(--poly-text-secondary);
 }
 
-.polly-spinner {
+.poly-spinner {
     width: 24px;
     height: 24px;
-    border: 2px solid var(--polly-border);
-    border-top-color: var(--polly-primary);
+    border: 2px solid var(--poly-border);
+    border-top-color: var(--poly-primary);
     border-radius: 50%;
-    animation: polly-spin 0.8s linear infinite;
+    animation: poly-spin 0.8s linear infinite;
     margin-bottom: 8px;
 }
 
-@keyframes polly-spin {
+@keyframes poly-spin {
     to { transform: rotate(360deg); }
 }
 
-.polly-powered-by {
+.poly-powered-by {
     text-align: center;
     font-size: 11px;
-    color: var(--polly-text-secondary);
+    color: var(--poly-text-secondary);
     padding: 8px;
-    border-top: 1px solid var(--polly-border);
+    border-top: 1px solid var(--poly-border);
 }
 
-.polly-powered-by a {
-    color: var(--polly-primary);
+.poly-powered-by a {
+    color: var(--poly-primary);
     text-decoration: none;
 }
 </style>
 
 <script>
 document.addEventListener('htmx:afterSwap', function(evt) {
-    if (evt.detail.target.classList.contains('polly-embed-container')) {
+    if (evt.detail.target.classList.contains('poly-embed-container')) {
         // Re-initialize poll widget after content swap
-        initPollyWidget(evt.detail.target);
+        initPolyWidget(evt.detail.target);
     }
 });
 
-function initPollyWidget(container) {
+function initPolyWidget(container) {
     // Handle vote form submissions
-    const voteForm = container.querySelector('.polly-vote-form');
+    const voteForm = container.querySelector('.poly-vote-form');
     if (voteForm) {
         voteForm.addEventListener('htmx:beforeSwap', function(evt) {
             if (evt.detail.failed) {

@@ -1,10 +1,10 @@
-# Credential Issuance Architecture for Polly Integration
+# Credential Issuance Architecture for Poly Integration
 
-This document describes how to build new apps that issue credentials for Polly's scoped polling system.
+This document describes how to build new apps that issue credentials for Poly's scoped polling system.
 
 ## Overview
 
-Polly uses **verifiable credentials (VCs)** to authorize users for polls at various organizational levels. New apps can be created to issue credentials at any scope level (global, state, county, organization, etc.).
+Poly uses **verifiable credentials (VCs)** to authorize users for polls at various organizational levels. New apps can be created to issue credentials at any scope level (global, state, county, organization, etc.).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -23,7 +23,7 @@ Polly uses **verifiable credentials (VCs)** to authorize users for polls at vari
        │              │            │            │           │
        ▼              ▼            ▼            ▼           ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Polly Core                                   │
+│                         Poly Core                                   │
 │                                                                      │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                │
 │  │ User DID    │  │ Scope       │  │ Poll        │                │
@@ -42,7 +42,7 @@ All credential-issuing apps should follow this schema:
 {
   "@context": [
     "https://www.w3.org/2018/credentials/v1",
-    "https://polly.example.com/credentials/v1"
+    "https://poly.example.com/credentials/v1"
   ],
   "type": ["VerifiableCredential", "AuthorizationCredential"],
   "issuer": "did:key:issuer-did",
@@ -147,7 +147,7 @@ class ScopeAuthorization(models.Model):
         return {
             "@context": [
                 "https://www.w3.org/2018/credentials/v1",
-                "https://polly.example.com/credentials/v1"
+                "https://poly.example.com/credentials/v1"
             ],
             "type": ["VerifiableCredential", "AuthorizationCredential"],
             "issuer": self.get_issuer_did(),
@@ -344,14 +344,14 @@ urlpatterns = [
 ]
 ```
 
-## Integration with Polly
+## Integration with Poly
 
-### 1. Configure Polly's Scope Resolution
+### 1. Configure Poly's Scope Resolution
 
-Add your app's issuer to Polly's configuration:
+Add your app's issuer to Poly's configuration:
 
 ```python
-# In Polly's settings or config module
+# In Poly's settings or config module
 SCOPE_ISSUERS = {
     "geographic:global": {
         "issuer_did": "did:key:global-issuer",
@@ -373,7 +373,7 @@ SCOPE_ISSUERS = {
 
 ### 2. Verify Credentials
 
-Polly verifies credentials by:
+Poly verifies credentials by:
 
 1. Parsing the VC
 2. Checking the issuer DID
@@ -381,7 +381,7 @@ Polly verifies credentials by:
 4. Verifying scope matches poll requirements
 
 ```python
-# In Polly's credential verification logic
+# In Poly's credential verification logic
 def verify_scope_credential(vc: dict, required_scope: str) -> bool:
     """Verify a VC grants access to the required scope."""
     
@@ -472,7 +472,7 @@ For each credential-issuing app:
 - [ ] Add admin interface for manual issuance
 - [ ] Configure issuer DID
 - [ ] Set up revocation endpoint
-- [ ] Add to Polly's `SCOPE_ISSUERS` config
+- [ ] Add to Poly's `SCOPE_ISSUERS` config
 - [ ] Document scope types and requirements
 - [ ] Add tests for credential issuance
 - [ ] Set up monitoring/analytics

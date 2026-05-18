@@ -4,11 +4,11 @@
 
 > **Upcoming**: Full Rust-DID integration is a priority for Q2 2026. The Python implementation will remain as a **backup** for environments without Rust toolchain.
 
-This document describes the Rust-based DID implementation in Polly.
+This document describes the Rust-based DID implementation in Poly.
 
 ## Overview
 
-Polly uses a hybrid Python/Rust DID implementation that provides:
+Poly uses a hybrid Python/Rust DID implementation that provides:
 - High-performance DID generation and VC verification
 - Seamless fallback to Python implementation
 - Future-proof architecture for web-based operations
@@ -17,7 +17,7 @@ Polly uses a hybrid Python/Rust DID implementation that provides:
 
 ```
 ┌─────────────────────────────────────────────┐
-│              Polly Django App               │
+│              Poly Django App               │
 │                                             │
 │  ┌─────────────────────────────────────┐   │
 │  │         did_utils.py                 │   │

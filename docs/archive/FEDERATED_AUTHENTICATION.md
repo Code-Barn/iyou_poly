@@ -6,7 +6,7 @@
 
 ## Overview
 
-Polly supports **federated authentication**, allowing users to authenticate using:
+Poly supports **federated authentication**, allowing users to authenticate using:
 - **Decentralized Identity (DID)** for passwordless, self-sovereign authentication.
 - **OpenID Connect (OIDC)** for integration with external identity providers like Google, GitHub, and more.
 - **Traditional username/password** for backward compatibility.
@@ -74,7 +74,7 @@ if verify_federated_vc(vc_json, did_key=did_key):
 ---
 
 ### 2. OpenID Connect (OIDC)
-OIDC allows users to authenticate using external identity providers like **Google, GitHub, or any OIDC-compliant provider**. Polly uses the [`python-social-auth`](https://python-social-auth.readthedocs.io/) library to integrate with OIDC providers.
+OIDC allows users to authenticate using external identity providers like **Google, GitHub, or any OIDC-compliant provider**. Poly uses the [`python-social-auth`](https://python-social-auth.readthedocs.io/) library to integrate with OIDC providers.
 
 #### Key Features
 - **Multi-Provider Support**: Integrate with any OIDC-compliant provider.
@@ -165,7 +165,7 @@ Users can log in using OIDC by clicking on the provider's button on the login pa
 ---
 
 ### 3. Traditional Username/Password
-Polly supports traditional username/password authentication for backward compatibility. This method is enabled by default and requires no additional configuration.
+Poly supports traditional username/password authentication for backward compatibility. This method is enabled by default and requires no additional configuration.
 
 #### Usage
 Users can log in using their username and password via the login form:
@@ -182,7 +182,7 @@ Users can log in using their username and password via the login form:
 ---
 
 ## Hybrid Authentication Backend
-Polly uses a **hybrid authentication backend** to support all three authentication methods (DID, OIDC, and username/password). The backend automatically detects the authentication method and processes the request accordingly.
+Poly uses a **hybrid authentication backend** to support all three authentication methods (DID, OIDC, and username/password). The backend automatically detects the authentication method and processes the request accordingly.
 
 ### Configuration
 To enable the hybrid backend, add it to `AUTHENTICATION_BACKENDS` in `settings.py`:
@@ -253,7 +253,7 @@ class HybridAuthBackend(ModelBackend):
 ---
 
 ## Trust Management
-Polly includes a **trust management system** to verify the authenticity of **Verifiable Credentials (VCs)** and **OIDC providers**.
+Poly includes a **trust management system** to verify the authenticity of **Verifiable Credentials (VCs)** and **OIDC providers**.
 
 ### Configuration
 Configure trust settings in `settings.py`:
@@ -299,7 +299,7 @@ The login page provides a **hybrid authentication form** that supports all three
 
 ```html
 <div class="max-w-md mx-auto">
-    <h2 class="text-2xl font-bold mb-6">Login to Polly</h2>
+    <h2 class="text-2xl font-bold mb-6">Login to Poly</h2>
 
     <!-- Traditional login -->
     <div class="mb-6 p-4 border rounded-lg">

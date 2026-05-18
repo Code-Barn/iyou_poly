@@ -2,9 +2,9 @@
 
 ## Overview
 
-Polly supports **OpenID Connect (OIDC)** for seamless integration with external identity providers like **Google, GitHub, GitLab, Microsoft, and more**. OIDC is an identity layer built on top of the OAuth 2.0 protocol, allowing users to authenticate using their existing accounts from trusted providers.
+Poly supports **OpenID Connect (OIDC)** for seamless integration with external identity providers like **Google, GitHub, GitLab, Microsoft, and more**. OIDC is an identity layer built on top of the OAuth 2.0 protocol, allowing users to authenticate using their existing accounts from trusted providers.
 
-This guide provides a comprehensive overview of how to integrate OIDC into Polly, including setup instructions, configuration options, and best practices.
+This guide provides a comprehensive overview of how to integrate OIDC into Poly, including setup instructions, configuration options, and best practices.
 
 ---
 
@@ -36,7 +36,7 @@ Before integrating OIDC, ensure you have the following:
 
 ### 1. Install `python-social-auth`
 
-Polly uses the [`python-social-auth`](https://python-social-auth.readthedocs.io/) library to integrate with OIDC providers. Install it using pip:
+Poly uses the [`python-social-auth`](https://python-social-auth.readthedocs.io/) library to integrate with OIDC providers. Install it using pip:
 
 ```bash
 pip install social-auth-app-django
@@ -97,7 +97,7 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = 'your-google-oauth2-secret'
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers).
 2. Click **New OAuth App**.
 3. Enter the following details:
-   - **Application Name**: Polly
+   - **Application Name**: Poly
    - **Homepage URL**: `http://localhost:8000/`
    - **Authorization Callback URL**:
      ```
@@ -113,7 +113,7 @@ SOCIAL_AUTH_GITHUB_SECRET = 'your-github-secret'
 
 ### 5. Configure the Authentication Pipeline
 
-The authentication pipeline defines the steps taken during the OIDC authentication process. Polly uses the default pipeline with some customizations. Add the following to `settings.py`:
+The authentication pipeline defines the steps taken during the OIDC authentication process. Poly uses the default pipeline with some customizations. Add the following to `settings.py`:
 
 ```python
 # settings.py
@@ -247,7 +247,7 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email', 'profile']
 
 ### 3. Logging Out
 
-To log users out of both Polly and the OIDC provider, add the following to your logout view:
+To log users out of both Poly and the OIDC provider, add the following to your logout view:
 
 ```python
 # apps/accounts/views.py
@@ -256,7 +256,7 @@ from social_django.utils import psa
 
 @psa('social:complete')
 def custom_logout(request, backend):
-    """Logout from both Polly and the OIDC provider."""
+    """Logout from both Poly and the OIDC provider."""
     logout(request)
     return redirect('login')
 ```

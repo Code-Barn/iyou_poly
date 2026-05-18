@@ -1,8 +1,8 @@
-# Polly Federated Authentication - Implementation Summary
+# Poly Federated Authentication - Implementation Summary
 
 ## 🎯 Project Overview
 
-This document summarizes the implementation of federated authentication in the Polly project, achieving the vision of a hybrid identity provider that removes single points of failure while maintaining user convenience and security.
+This document summarizes the implementation of federated authentication in the Poly project, achieving the vision of a hybrid identity provider that removes single points of failure while maintaining user convenience and security.
 
 **Latest Update**: Added flexible VC parsing for DID login to handle multiple input formats (JSON, Python dict, HTML-escaped).
 

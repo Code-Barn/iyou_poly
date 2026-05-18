@@ -1,8 +1,8 @@
-# Polly - Decentralized Polling Application
+# Poly - Decentralized Polling Application
 
 ## Overview
 
-Polly transforms a basic Django polling app into a blockchain-based decentralized polling application with:
+Poly transforms a basic Django polling app into a blockchain-based decentralized polling application with:
 - Immutable ledger for poll data
 - Distributed, decentralized records across nodes
 - DID-based authentication (did:key, did:ethr, did:web, did:ion)
@@ -20,7 +20,7 @@ Polly transforms a basic Django polling app into a blockchain-based decentralize
 ## Project Structure
 
 ```
-polly/
+poly/
 ├── apps/
 │   ├── accounts/          # User accounts, DID management
 │   ├── core/             # Core models, credentials, federation
@@ -92,7 +92,7 @@ polly/
 
 ### 1. Install Dependencies
 ```bash
-cd /home/user/CODE_BASE/polly
+cd /home/user/CODE_BASE/poly
 uv sync
 ```
 

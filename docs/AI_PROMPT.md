@@ -1,6 +1,6 @@
-# AI Prompt Guide for Polly Project
+# AI Prompt Guide for Poly Project
 
-This document serves as a **living guide** for AI-assisted development in the Polly project.
+This document serves as a **living guide** for AI-assisted development in the Poly project.
 
 ---
 
@@ -8,7 +8,7 @@ This document serves as a **living guide** for AI-assisted development in the Po
 
 ### 1.1 Project Goals
 
-Polly is a **decentralized/federated identity provider and polling platform**:
+Poly is a **decentralized/federated identity provider and polling platform**:
 
 - **Decentralized Identity (DID)**: Support for DIDs (did:key, did:ethr, did:web, did:ion)
 - **Verifiable Credentials (VCs)**: Issue, store, verify, and manage credentials
@@ -30,7 +30,7 @@ Polly is a **decentralized/federated identity provider and polling platform**:
 
 ### 1.3 DID/VC Implementation
 
-**IMPORTANT**: Polly uses a hybrid Python/Rust implementation:
+**IMPORTANT**: Poly uses a hybrid Python/Rust implementation:
 
 ```bash
 # Rust backend (recommended, faster)
@@ -113,7 +113,7 @@ The Python fallback remains as a **backup** for scenarios where Rust is unavaila
 ## 4. Project Structure
 
 ```
-polly/
+poly/
 ├── apps/
 │   ├── accounts/       # User auth, DIDs, credentials
 │   ├── core/          # DID/VC models, scopes, federation

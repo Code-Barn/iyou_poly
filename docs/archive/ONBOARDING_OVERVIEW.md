@@ -1,8 +1,8 @@
-# Polly Project - Technical Overview for New Developers
+# Poly Project - Technical Overview for New Developers
 
-## What is Polly?
+## What is Poly?
 
-Polly is a **decentralized/federated identity provider and polling platform** built with Django. It enables:
+Poly is a **decentralized/federated identity provider and polling platform** built with Django. It enables:
 
 - Decentralized Identity (DID) management using W3C standards
 - Verifiable Credentials (VCs) for authorization
@@ -23,7 +23,7 @@ Polly is a **decentralized/federated identity provider and polling platform** bu
 ## Project Structure
 
 ```
-polly/
+poly/
 ├── apps/
 │   ├── accounts/         # User auth, DIDs, credentials
 │   ├── core/             # Core models, federation, trust

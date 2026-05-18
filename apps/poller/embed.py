@@ -1,5 +1,5 @@
 """
-Embeddable Polly widget for external applications.
+Embeddable Poly widget for external applications.
 
 This module provides a lightweight, embeddable poll widget that can be
 integrated into external apps like Byers Brands LLC or Namechart.
@@ -214,19 +214,19 @@ class EmbedPollView(View):
     def get(self, request: HttpRequest, poll_id: int) -> JsonResponse:
         """Return minimal HTML for embedding."""
         embed_html = f'''
-        <div id="polly-embed-{poll_id}" class="polly-widget">
-            <div class="polly-loading">Loading poll...</div>
+        <div id="poly-embed-{poll_id}" class="poly-widget">
+            <div class="poly-loading">Loading poll...</div>
         </div>
         <script>
             (function() {{
-                var container = document.getElementById('polly-embed-{poll_id}');
+                var container = document.getElementById('poly-embed-{poll_id}');
                 fetch('/api/embed/polls/{poll_id}/?{request.GET.urlencode()}')
                     .then(r => r.json())
                     .then(data => {{
                         container.innerHTML = data.html;
                     }})
                     .catch(e => {{
-                        container.innerHTML = '<div class="polly-error">Failed to load poll</div>';
+                        container.innerHTML = '<div class="poly-error">Failed to load poll</div>';
                     }});
             }})();
         </script>

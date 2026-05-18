@@ -1,4 +1,4 @@
-# polly/apps/accounts/tests/test_registration.py
+# poly/apps/accounts/tests/test_registration.py
 import json
 import re
 

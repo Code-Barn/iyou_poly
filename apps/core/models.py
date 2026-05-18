@@ -1,5 +1,5 @@
 """
-Core models for the Polly project.
+Core models for the Poly project.
 
 This module defines the foundational models for decentralized identity and federated data.
 These models serve as the backbone for the entire project, enabling decentralized
@@ -176,7 +176,7 @@ class FederatedNode(models.Model):
     """
     Model representing a federated node in the network.
 
-    A federated node is an instance of the Polly application that participates in the federated network.
+    A federated node is an instance of the Poly application that participates in the federated network.
     This model stores metadata about each node.
     """
 
@@ -211,7 +211,7 @@ class FederatedData(models.Model):
     Model representing data that is synchronized across federated nodes.
 
     This model stores data that needs to be shared and synchronized across multiple
-    instances of the Polly application.
+    instances of the Poly application.
     """
 
     node = models.ForeignKey(

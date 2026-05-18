@@ -1,6 +1,6 @@
-# Polly: Sovereign Decentralized Polling Platform
+# Poly: Sovereign Decentralized Polling Platform
 
-Polly is the **Governance Layer** of the Sovereign Mesh. It provides OIDC/DID-authenticated,
+Poly is the **Governance Layer** of the Sovereign Mesh. It provides OIDC/DID-authenticated,
 credential-scoped polling with verifiable audit trails. All cryptographic signing is
 delegated to the local Tauri Desktop Bridge (`iyou_home` at `ws://127.0.0.1:9001`) —
 the server never holds private keys.
@@ -9,7 +9,7 @@ the server never holds private keys.
 
 ```
 ┌─────────────┐     OIDC Auth     ┌──────────────┐
-│  iyou_idp   │◄────────────────►│    Polly     │
+│  iyou_idp   │◄────────────────►│    Poly     │
 │  :8000      │                   │  :8002       │
 └─────────────┘                   └──────┬───────┘
                                          │
@@ -34,7 +34,7 @@ the server never holds private keys.
 
 - **OIDC-Only Authentication**: All users authenticate through `iyou_idp` at `127.0.0.1:8000`. Username is the IdP `sub` claim (the DID). No passwords, no social logins.
 - **Verifiable Credentials (VCs)**: Issue, store, and manage credentials. Signing done via the Tauri bridge WebSocket protocol (`ws://127.0.0.1:9001`).
-- **Signature Bridge Protocol**: `sign`, `sign_event`, `sign_credential` message types — see [Developer Guide](POLLY_DEVELOPER_GUIDE.md).
+- **Signature Bridge Protocol**: `sign`, `sign_event`, `sign_credential` message types — see [Developer Guide](POLY_DEVELOPER_GUIDE.md).
 - **Scope-Based Voting**: Credential-aware polls with family, organization, and geographic scoping.
 - **Family-Scoped Polling**: Family-unit, family-scoped, and organization poll types.
 - **Proposal & Funding**: Polls with funding goals and progress tracking.
@@ -47,8 +47,8 @@ the server never holds private keys.
 
 ```bash
 # Clone
-git clone https://github.com/Code-Barn/polly-django.git
-cd polly-django
+git clone https://github.com/Code-Barn/poly-django.git
+cd poly-django
 
 # Install
 uv sync
@@ -76,7 +76,7 @@ Access: `http://127.0.0.1:8002/`
 3. IdP authenticates (may request a signature challenge from `ws://127.0.0.1:9001`)
 4. Callback at `http://127.0.0.1:8002/oidc/callback/` creates/authenticates user
 5. `username` is set to the `sub` claim (the DID)
-6. Session cookie: `polly_sessionid`
+6. Session cookie: `poly_sessionid`
 
 ## Signature Bridge
 

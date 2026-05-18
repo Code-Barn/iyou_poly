@@ -2,11 +2,11 @@
 
 **Latest Update**: April 2026
 
-> **Note**: Polly uses DIDKit (Rust) as the primary DID/VC implementation, with a Python fallback for environments without Rust. Full Rust-DID integration coming Q2 2026.
+> **Note**: Poly uses DIDKit (Rust) as the primary DID/VC implementation, with a Python fallback for environments without Rust. Full Rust-DID integration coming Q2 2026.
 
 ## Overview
 
-This document describes the credential management system implemented in Polly and DID_auth, including the separation of Authentication Credentials from Other Credentials, best practices, and future enhancements.
+This document describes the credential management system implemented in Poly and DID_auth, including the separation of Authentication Credentials from Other Credentials, best practices, and future enhancements.
 
 ## 🎯 System Architecture
 
@@ -270,7 +270,7 @@ sequenceDiagram
 - [x] Add helpful empty state messages
 - [x] Add action buttons for credential management
 - [x] Apply JSON formatting to all credentials
-- [x] Update both Polly and DID_auth projects
+- [x] Update both Poly and DID_auth projects
 - [ ] Implement credential generation functionality
 - [ ] Implement credential import functionality
 - [ ] Add credential deletion capability
@@ -278,7 +278,7 @@ sequenceDiagram
 
 ## 🎯 Conclusion
 
-This credential management system provides a robust foundation for decentralized identity in both Polly and DID_auth projects. By clearly separating authentication credentials from other credentials, we achieve:
+This credential management system provides a robust foundation for decentralized identity in both Poly and DID_auth projects. By clearly separating authentication credentials from other credentials, we achieve:
 
 - **Security**: Immutable authentication with verifiable attributes
 - **Flexibility**: Support for diverse use cases and credential types

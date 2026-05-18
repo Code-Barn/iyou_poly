@@ -359,7 +359,7 @@ class FederatedPoll(FederatedData):
     Model representing a poll that is synchronized across federated nodes.
 
     This model extends the `FederatedData` model to store poll data that needs to be
-    synchronized across multiple instances of the Polly application.
+    synchronized across multiple instances of the Poly application.
     """
 
     class Meta:

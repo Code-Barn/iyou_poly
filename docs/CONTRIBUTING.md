@@ -1,6 +1,6 @@
-# Contributing to Polly
+# Contributing to Poly
 
-Thank you for your interest in contributing to Polly! We welcome contributions from everyone, whether you're fixing a bug, adding a feature, improving documentation, or suggesting an idea. This document outlines the guidelines for contributing to the project.
+Thank you for your interest in contributing to Poly! We welcome contributions from everyone, whether you're fixing a bug, adding a feature, improving documentation, or suggesting an idea. This document outlines the guidelines for contributing to the project.
 
 ---
 
@@ -23,13 +23,13 @@ If you encounter a bug, have a feature request, or want to suggest an improvemen
 
 ### **2. Setting Up the Development Environment**
 
-To contribute to Polly, you'll need to set up a local development environment:
+To contribute to Poly, you'll need to set up a local development environment:
 
-1. **Fork the Repository**: Create a fork of the Polly repository on GitHub.
+1. **Fork the Repository**: Create a fork of the Poly repository on GitHub.
 2. **Clone the Repository**: Clone your fork to your local machine.
    ```bash
-   git clone https://github.com/your-username/polly.git
-   cd polly
+   git clone https://github.com/your-username/poly.git
+   cd poly
    ```
 3. **Set Up a Virtual Environment**: Create and activate a virtual environment.
    ```bash
@@ -69,7 +69,7 @@ To contribute to Polly, you'll need to set up a local development environment:
    ```bash
    git push origin feature/your-feature-name
    ```
-7. **Open a Pull Request**: Open a pull request to the `main` branch of the Polly repository. Include a detailed description of your changes and any relevant issue numbers.
+7. **Open a Pull Request**: Open a pull request to the `main` branch of the Poly repository. Include a detailed description of your changes and any relevant issue numbers.
 
 ---
 
@@ -102,15 +102,15 @@ All pull requests will be reviewed by the project maintainers. During the review
 
 Join our community to discuss ideas, ask questions, and collaborate with other contributors:
 
-- **GitHub Discussions**: [Polly Discussions](https://github.com/your-username/polly/discussions)
-- **Chat**: [Polly Community Chat](https://chat.example.com)
+- **GitHub Discussions**: [Poly Discussions](https://github.com/your-username/poly/discussions)
+- **Chat**: [Poly Community Chat](https://chat.example.com)
 
 ---
 
 ## **License**
 
-By contributing to Polly, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to Poly, you agree that your contributions will be licensed under the [MIT License](LICENSE).
 
 ---
 
-Thank you for contributing to Polly! Your efforts help make this project better for everyone.
+Thank you for contributing to Poly! Your efforts help make this project better for everyone.

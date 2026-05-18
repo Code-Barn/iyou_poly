@@ -550,7 +550,7 @@ class IssueCredentialAPIView(APIView):
         credential_data = {
             "@context": [
                 "https://www.w3.org/2018/credentials/v1",
-                "https://polly.example.com/credentials/v1",
+                "https://poly.example.com/credentials/v1",
             ],
             "id": f"urn:uuid:{uuid.uuid4()}",
             "type": ["VerifiableCredential", data["credential_type"]],

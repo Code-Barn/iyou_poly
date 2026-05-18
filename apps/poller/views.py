@@ -728,7 +728,7 @@ class PollViewSet(viewsets.ModelViewSet):
             "required_scope_type", "required_scope", "required_credential_type"
         ).prefetch_related("options")
 
-        # Filter by embedding app (for embedded Polly)
+        # Filter by embedding app (for embedded Poly)
         embedding_app = self.request.query_params.get("embedding_app")
         if embedding_app:
             queryset = queryset.filter(embedding_app=embedding_app)

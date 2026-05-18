@@ -11,7 +11,7 @@
 | **Messaging** | **Nostr** | Global event distribution (Microblogging, Comments, Metadata). |
 | **Real-time** | **XMPP (Prosody)** | End-to-end encrypted (OMEMO) instant messaging. |
 | **Storage** | **Blossom (BUD-01)** | Content-addressed blob storage authenticated by Nostr keys. |
-| **Governance** | **Polly** | Cryptographically verifiable polling and auditing. |
+| **Governance** | **Poly** | Cryptographically verifiable polling and auditing. |
 
 
 ## 🛡️ 2. Identity & Authentication (The Mandate)
@@ -57,9 +57,9 @@
 - **Executive Decision: Nostr replaces ActivityPub.** \* While ActivityPub is mature, Nostr's relay-based architecture aligns better with our key-based DID identity and "client-side-first" logic.
 
 
-## 🗳️ 5. Governance (The Polly Integration)
+## 🗳️ 5. Governance (The Poly Integration)
 
-- **Protocolized Opining**: Every project in the ecosystem (including `iyou\_wun` and `iyou\_home`) must support the **Polly Protocol**.
+- **Protocolized Opining**: Every project in the ecosystem (including `iyou\_wun` and `iyou\_home`) must support the **Poly Protocol**.
 
 - **Verifiable Proofs**: Votes are signed by the user's DID and anchored to the Omni-Social Merkle Ledger.
 
@@ -81,5 +81,5 @@ We recognize that "Total Sovereignty" is a high bar. We offer two modes of parti
 
 2. **Standardize Envelopes**: All API responses involving verification must follow the JSON schema: `\{"valid": bool, "error": "...", "details": \{\}\}`.
 
-3. **Relay to Home Base**: Satellite apps (`iyou\_wun`, `polly\_django`) must provide a "Sync to Home" button that pushes a user's data/history to their local `iyou\_home` instance for backup.
+3. **Relay to Home Base**: Satellite apps (`iyou\_wun`, `poly\_django`) must provide a "Sync to Home" button that pushes a user's data/history to their local `iyou\_home` instance for backup.
 

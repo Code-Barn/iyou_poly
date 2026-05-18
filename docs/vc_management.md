@@ -2,9 +2,9 @@
 
 **Latest Update**: April 2026
 
-This document describes the Verifiable Credential (VC) management system in Polly.
+This document describes the Verifiable Credential (VC) management system in Poly.
 
-> **Note**: Polly uses DIDKit (Rust) as the primary DID/VC implementation, with a Python fallback. See [AI_PROMPT.md](./AI_PROMPT.md) for details.
+> **Note**: Poly uses DIDKit (Rust) as the primary DID/VC implementation, with a Python fallback. See [AI_PROMPT.md](./AI_PROMPT.md) for details.
 
 ## Credential Data Structure
 

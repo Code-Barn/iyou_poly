@@ -1,8 +1,8 @@
-# Polly Project - Recent Changes Summary
+# Poly Project - Recent Changes Summary
 
 ## 📅 January 2026 Updates
 
-This document summarizes the recent changes made to the Polly project, focusing on the DID authentication system improvements.
+This document summarizes the recent changes made to the Poly project, focusing on the DID authentication system improvements.
 
 ## 🎯 Major Accomplishments
 

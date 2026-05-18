@@ -2,14 +2,14 @@
 
 ## Session Summary
 
-Continued retrofitting Polly's legacy DID-based auth to OIDC-only with Tauri bridge signing. The thread can be traced in the conversation transcript.
+Continued retrofitting Poly's legacy DID-based auth to OIDC-only with Tauri bridge signing. The thread can be traced in the conversation transcript.
 
 ## What Was Done
 
 ### OIDC Auth & Session Config (prior commits)
 - `MyOIDCAuthenticationBackend` replaces `DIDAuthBackend` + `OIDCAuthBackend`
 - Username = IdP `sub` claim (direct mapping, no email/password)
-- Session cookie renamed to `polly_sessionid`
+- Session cookie renamed to `poly_sessionid`
 - All OIDC endpoints pointed at `http://127.0.0.1:8000/openid/...`
 - didkit purged from dependencies and code
 
@@ -32,7 +32,7 @@ All services confirmed running:
 |---|---|---|
 | IdP (iyou_wun) | 8000 | ✓ |
 | Social Feed | 8001 | ✓ |
-| Polly | 8002 | ✓ (restarted with changes) |
+| Poly | 8002 | ✓ (restarted with changes) |
 | Tauri Bridge (iyou-home) | 9001 | ✓ connected, ✗ unresponsive |
 
 **OIDC login flow**: `/oidc/authenticate/` redirects correctly to IdP at `:8000/openid/authorize/` with proper params. IdP login page attempts WebSocket handshake with bridge at `:9001` but gets no response — falls back to manual VP paste mode.
@@ -45,7 +45,7 @@ All services confirmed running:
 
 1. **Bridge message handling** — `iyou-home` at `:9001` needs to implement two WebSocket message types:
    - `"sign"` (challenge → signed VP) for the IdP login page
-   - `"sign_credential"` (unsigned credential → signed VC) for Polly's VC issuance
+   - `"sign_credential"` (unsigned credential → signed VC) for Poly's VC issuance
 2. **Vote signing** — Still on SHA-256 placeholder; needs the same bridge message type
 
 ## Testing Infrastructure (EOD)

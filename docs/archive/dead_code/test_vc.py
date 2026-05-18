@@ -1,5 +1,5 @@
 """
-Test script to verify DID and VC functionality in Polly.
+Test script to verify DID and VC functionality in Poly.
 
 This script tests:
 1. DID generation using didkit.keyToDID

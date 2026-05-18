@@ -78,14 +78,14 @@ def verify_vc(vc_data, did_key=None):
     """
     logger.info("Verifying VC")
 
-    # Import the verify_vc function from the Polly project
-    sys.path.append("/home/user/CODE_BASE/polly")
-    from apps.accounts.utils.did_utils import verify_vc as polly_verify_vc
+    # Import the verify_vc function from the Poly project
+    sys.path.append("/home/user/CODE_BASE/poly")
+    from apps.accounts.utils.did_utils import verify_vc as poly_verify_vc
 
-    # Test 1: Verify with the updated verify_vc function from Polly
+    # Test 1: Verify with the updated verify_vc function from Poly
     try:
         vc_str = json.dumps(vc_data)
-        result = polly_verify_vc(vc_str, did_key=did_key)
+        result = poly_verify_vc(vc_str, did_key=did_key)
         logger.info(f"VC verification result: {result}")
         return result
     except Exception as e:

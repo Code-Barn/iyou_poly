@@ -61,7 +61,7 @@ urlpatterns = router.urls + [
         CheckVotingEligibilityAPIView.as_view(),
         name="check_eligibility_api",
     ),
-    # Embeddable Polly API
+    # Embeddable Poly API
     path(
         "api/embed/polls/",
         EmbeddablePollWidget.as_view(),

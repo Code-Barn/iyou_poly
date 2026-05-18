@@ -10,7 +10,7 @@ class CoreConfig(AppConfig):
     AppConfig for the `core` app.
 
     This app provides the foundational models and logic for decentralized identity
-    and federated data synchronization in the Polly project.
+    and federated data synchronization in the Poly project.
     """
 
     name = "apps.core"

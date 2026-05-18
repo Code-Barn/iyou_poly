@@ -4,7 +4,7 @@
 
 ## Overview
 
-Polly documentation covers decentralized identity, polling, and federation. See the main [README.md](../README.md) for current features.
+Poly documentation covers decentralized identity, polling, and federation. See the main [README.md](../README.md) for current features.
 
 ## Documentation Structure
 

@@ -1,18 +1,18 @@
-# Polly Decentralized Polling - Technical Specification
+# Poly Decentralized Polling - Technical Specification
 
 **Latest Update**: April 2026
 
-> **Note**: Polly now supports additional poll types: `family_unit`, `family_scoped`, `organization`. See [README.md](../README.md) and [VOTING_FUNCTIONALITY.md](./VOTING_FUNCTIONALITY.md) for the latest features.
+> **Note**: Poly now supports additional poll types: `family_unit`, `family_scoped`, `organization`. See [README.md](../README.md) and [VOTING_FUNCTIONALITY.md](./VOTING_FUNCTIONALITY.md) for the latest features.
 
 ## Project Overview
 
-Polly is a decentralized, immutable polling application that enables distributed consensus determination through cryptographically-verified voting. The system uses Decentralized Identifiers (DIDs) for identity, Verifiable Credentials (VCs) for authorization, and IPFS + blockchain anchoring for data integrity.
+Poly is a decentralized, immutable polling application that enables distributed consensus determination through cryptographically-verified voting. The system uses Decentralized Identifiers (DIDs) for identity, Verifiable Credentials (VCs) for authorization, and IPFS + blockchain anchoring for data integrity.
 
 ## Design Principles: Flexible Scope System
 
 ### Core Philosophy
 
-Polly is designed to support **consensus determination within any group**, not just geographic communities. The scope system is **fully extensible** — administrators can define new scope types as needed.
+Poly is designed to support **consensus determination within any group**, not just geographic communities. The scope system is **fully extensible** — administrators can define new scope types as needed.
 
 ### Scope Architecture
 
@@ -37,7 +37,7 @@ Polly is designed to support **consensus determination within any group**, not j
 
 1. **Primary use case**: Geographic consensus (town → county → state → nation → global)
 2. **Extensibility**: Add any scope type without code changes
-3. **Organization support**: Companies, clubs, families can all use Polly
+3. **Organization support**: Companies, clubs, families can all use Poly
 4. **Self-governance**: Organizations can self-authorize without external approval
 5. **Gradual trust building**: New users need credentials from existing group members
 
@@ -51,7 +51,7 @@ Polly is designed to support **consensus determination within any group**, not j
 {
   "@context": [
     "https://www.w3.org/2018/credentials/v1",
-    "https://polly.example.com/credentials/v1"
+    "https://poly.example.com/credentials/v1"
   ],
   "type": ["VerifiableCredential", "VotingAuthorization"],
   "issuer": "did:ethr:0x1234... (issuer DID)",
@@ -68,7 +68,7 @@ Polly is designed to support **consensus determination within any group**, not j
     "issuedAt": "2024-01-01T00:00:00Z"
   },
   "credentialStatus": {
-    "id": "https://polly.example.com/credentials/status/1",
+    "id": "https://poly.example.com/credentials/status/1",
     "type": "RevocationList2023"
   }
 }
@@ -809,7 +809,7 @@ Register a new scope instance.
   "nodes": [
     {
       "node_id": "uuid",
-      "endpoint": "https://polly-node-2.example.com",
+      "endpoint": "https://poly-node-2.example.com",
       "public_key": "0x...",
       "last_seen": "2024-01-20T14:00:00Z",
       "sync_status": "in_sync"
@@ -1105,7 +1105,7 @@ class SyncMessageType(Enum):
   "message_id": "uuid",
   "message_type": "vote",
   "sender_node": "node-uuid",
-  "sender_endpoint": "https://polly-node-a.example.com",
+  "sender_endpoint": "https://poly-node-a.example.com",
   "timestamp": "2024-01-20T15:00:00Z",
   "signature": "0xmessageSignature...",
   "payload": {

@@ -5,7 +5,7 @@ import sys
 import django
 
 # Add the project directory to the Python path
-sys.path.insert(0, '/home/user/CODE_BASE/polly')
+sys.path.insert(0, '/home/user/CODE_BASE/poly')
 
 # Set up Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')

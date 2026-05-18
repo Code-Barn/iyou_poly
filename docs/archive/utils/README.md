@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains utility functions for working with Decentralized Identifiers (DIDs) and Verifiable Credentials (VCs) in the Polly project.
+This directory contains utility functions for working with Decentralized Identifiers (DIDs) and Verifiable Credentials (VCs) in the Poly project.
 
 ## Key Functions
 
