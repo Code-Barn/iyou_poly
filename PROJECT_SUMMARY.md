@@ -1,8 +1,8 @@
-# Poly - Decentralized Polling Application
+# iyou_poly - Decentralized Polling Application
 
 ## Overview
 
-Poly transforms a basic Django polling app into a blockchain-based decentralized polling application with:
+iyou_poly transforms a basic Django polling app into a blockchain-based decentralized polling application with:
 - Immutable ledger for poll data
 - Distributed, decentralized records across nodes
 - DID-based authentication (did:key, did:ethr, did:web, did:ion)

@@ -1,3 +1,6 @@
+# Dev archive — local scratch, duplicates, archived docs
+dev_archive/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -53,6 +56,12 @@ test-results/
 # Logging
 *.log
 server.log
+
+# Federation queue logs
+federation/
+federated_*.log
+gossip_*.log
+sync_*.log
 
 # Temporary files
 *.bak
