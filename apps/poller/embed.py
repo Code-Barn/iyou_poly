@@ -1,4 +1,4 @@
-# Copyright (C) 2026 Byers Brands, LLC
+# Copyright (C) 2026 David Byers dba Byers Brands
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -36,11 +36,11 @@ logger = logging.getLogger(__name__)
 class EmbeddablePollWidget(View):
     """
     Render a poll widget that can be embedded in external apps.
-    
+
     Usage:
     /embed/polls/ - List polls for embedding (filtered by app + user)
     /embed/polls/<poll_id>/ - Single poll widget
-    
+
     Parameters:
     - embedding_app: The external app identifier (e.g., 'byers-brands-llc')
     - user_did: The user's DID for credential-based filtering
@@ -252,10 +252,10 @@ class EmbedPollView(View):
 def embed_polls(request: HttpRequest) -> JsonResponse:
     """
     API endpoint for embedded polls.
-    
+
     GET /api/embed/polls/
     GET /api/embed/polls/<poll_id>/
-    
+
     Query parameters:
     - embedding_app: Filter by embedding app
     - user_did: Filter by user DID
