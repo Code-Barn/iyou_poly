@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 """
-Core models for the Poly project.
+Core models for the iyou_poly project.
 
 This module defines the foundational models for decentralized identity and federated data.
 These models serve as the backbone for the entire project, enabling decentralized

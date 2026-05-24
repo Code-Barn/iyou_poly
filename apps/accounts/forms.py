@@ -17,7 +17,7 @@
 Forms for the `accounts` app.
 
 This module defines forms for user registration, authentication, and profile management
-in the Poly project. It includes forms for DID-based and federated authentication.
+in the iyou_poly project. It includes forms for DID-based and federated authentication.
 """
 
 from django.contrib.auth import get_user_model
@@ -28,7 +28,7 @@ User = get_user_model()
 
 class UserCreationForm(BaseUserCreationForm):
     """
-    Custom user creation form for the Poly project.
+    Custom user creation form for the iyou_poly project.
 
     This form extends Django's built-in `UserCreationForm` to support the custom `User` model.
     """

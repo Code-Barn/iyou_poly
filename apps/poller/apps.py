@@ -24,7 +24,7 @@ class PollerConfig(AppConfig):
     """
     AppConfig for the `poller` app.
 
-    This app provides decentralized polling functionality for the Poly project.
+    This app provides decentralized polling functionality for the iyou_poly project.
     """
 
     name = "apps.poller"

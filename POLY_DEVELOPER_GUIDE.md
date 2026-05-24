@@ -1,12 +1,12 @@
-# Poly Developer Guide
+# iyou_poly Developer Guide
 
 ## Project State Assessment
 
-This document provides a comprehensive technical overview of the Poly decentralized polling platform to guide future development decisions.
+This document provides a comprehensive technical overview of the iyou_poly decentralized polling platform to guide future development decisions.
 
 ### Architecture Overview
 
-Poly is a Django-based decentralized polling platform using OIDC for authentication, with a credential-based authorization system and federated data synchronization.
+iyou_poly is a Django-based decentralized polling platform using OIDC for authentication, with a credential-based authorization system and federated data synchronization.
 
 #### **Signature-Strict Voting**
 
@@ -33,7 +33,7 @@ Poly is a Django-based decentralized polling platform using OIDC for authenticat
 
 #### **Signature Bridge Protocol (Port 9001)**
 
-Poly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_home` at `ws://127.0.0.1:9001`). The server never holds private keys.
+iyou_poly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_home` at `ws://127.0.0.1:9001`). The server never holds private keys.
 
 **WebSocket Message Types:**
 
@@ -58,9 +58,9 @@ Poly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_
 - ✅ Embeddable widget API
 - ✅ Federation protocol with gossip messaging
 
-**Not Yet Implemented:**
-- ❌ DID-based identity (did:key, did:ethr, did:web, did:ion) — `DID` model exists but unused for auth
-- ❌ Verifiable Credential (VC) signing — `VerifiableCredential` model exists but no issuance flow
+**Partially Implemented:**
+- 🟡 DID-based identity (did:key, did:ethr, did:web, did:ion) — DIDs are used in the credential/voting flow (scope checking, eligibility), but auth remains OIDC-only
+- ✅ Verifiable Credential (VC) issuance — Full flow operational: Generate → Sign (via Tauri bridge) → Store → Import → Delete → Manage. See `apps/accounts/views.py` (GenerateCredentialView, StoreSignedCredentialView, VCManagementView). The bridge `sign_credential` WebSocket is still marked `xfail` in tests pending bridge-side implementation.
 - ❌ IPFS/blockchain anchoring — fields exist on models but no integration code
 - ❌ Real-time updates — no WebSocket/SSE implementation
 
@@ -167,7 +167,7 @@ Poly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_
 - ✅ Username = IdP `sub` claim (no separate DID field for new users)
 - ✅ Credential-based authorization via `User.vcs` JSONField and `CredentialIssuance` table
 - ❌ Traditional password auth removed
-- ❌ DID-based backends (`DIDAuthBackend`, `OIDCAuthBackend`) removed (exist only in dead code)
+- ❌ DID-based backends (`DIDAuthBackend`, `OIDCAuthBackend`) fully removed — no trace remains even in dead code
 
 **Models (in `apps/accounts/models.py`):**
 - `User` (extends `AbstractUser`): `username` holds the IdP `sub`; deprecated `did`/`did_key`/`did_method` fields for legacy data; `vcs` JSONField active for VC storage with metadata format
@@ -431,8 +431,8 @@ Poly delegates all cryptographic signing to the **Tauri Desktop Bridge** (`iyou_
 
 ```bash
 # Clone repository
-git clone https://github.com/Code-Barn/poly-django.git
-cd poly-django
+git clone https://github.com/Code-Barn/iyou_poly.git
+cd iyou_poly
 
 # Install dependencies
 uv sync
@@ -440,11 +440,8 @@ uv sync
 # Run migrations
 uv run python manage.py migrate
 
-# Create initial data
-uv run python manage.py create_geographical_scopes
-
 # Start server
-uv run python manage.py runserver
+uv run python manage.py runserver 127.0.0.1:8002
 ```
 
 ### Key Development Areas
@@ -478,7 +475,7 @@ uv run python manage.py test apps.poller.tests
 
 ## Conclusion
 
-Poly provides a solid foundation for decentralized polling with:
+iyou_poly provides a solid foundation for decentralized polling with:
 - OIDC-based authentication via `iyou_idp`
 - Flexible scope-based authorization with credential types
 - Functional federation data model (network dispatch pending)
