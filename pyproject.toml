@@ -32,7 +32,6 @@ dev = [
 DJANGO_SETTINGS_MODULE = "config.settings"
 testpaths = [
     "apps",
-    "tests",
 ]
 python_files = ["test_*.py"]
 markers = [

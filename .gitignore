@@ -1,6 +1,9 @@
 # Dev archive — local scratch, duplicates, archived docs
 dev_archive/
 
+# Archived outdated docs
+docs/archive/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
