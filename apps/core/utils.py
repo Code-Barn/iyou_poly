@@ -22,7 +22,7 @@ This module provides utilities for conflict resolution, trust scoring, and other
 import hashlib
 import datetime
 import math
-from typing import Optional
+from typing import Any, Optional
 
 
 class ConflictResolution:
@@ -320,3 +320,13 @@ class TrustScorer:
         threshold_value = TRUST_THRESHOLDS.get(threshold, 0.0)
         score = cls.calculate_score(metrics)
         return score >= threshold_value
+
+
+def ok(details: dict | None = None, error: str = "") -> dict[str, Any]:
+    """Standardised v2 success envelope."""
+    return {"valid": True, "error": error, "details": details or {}}
+
+
+def err(error: str, details: dict | None = None) -> dict[str, Any]:
+    """Standardised v2 error envelope."""
+    return {"valid": False, "error": error, "details": details or {}}

@@ -1,28 +1,63 @@
-# Copyright (C) 2026 David Byers dba Byers Brands
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+import asyncio
+import json
+import logging
 
-import time
-
+from django.conf import settings
 from django.core.management.base import BaseCommand
+
+from apps.poller import nostr
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Gossip heartbeat worker for K3s sidecar"
+    help = "Nostr subscription worker — listens for inbound poll/vote events from relays"
 
     def handle(self, *args, **options):
-        self.stdout.write("[gossip_worker] starting heartbeat loop")
-        while True:
-            self.stdout.write("[gossip_worker] heartbeat — mesh active")
-            time.sleep(60)
+        if not settings.NOSTR_ENABLED:
+            self.stdout.write(self.style.WARNING(
+                "Nostr is disabled (NOSTR_PRIVATE_KEY not set). "
+                "Set NOSTR_PRIVATE_KEY in your environment to enable mesh participation."
+            ))
+            return
+
+        relays = settings.NOSTR_RELAYS
+        self.stdout.write(f"[gossip_worker] subscribing to {len(relays)} relay(s): {relays}")
+        self.stdout.write("[gossip_worker] listening for kind:30023 (poll) and kind:1111 (vote) events")
+
+        async def _run():
+            tasks = [
+                nostr.subscribe_loop(
+                    relay,
+                    kinds=[30023, 1111],
+                    on_event=self._handle_event,
+                    sub_id=f"iyou_poly_{relay.replace('://', '_').replace('/', '_')}",
+                )
+                for relay in relays
+            ]
+            await asyncio.gather(*tasks)
+
+        asyncio.run(_run())
+
+    def _handle_event(self, event: dict):
+        kind = event.get("kind")
+        content = event.get("content", "")
+        tags = event.get("tags", [])
+
+        if kind == 30023:
+            self.stdout.write(f"[gossip_worker] received poll event: {event.get('id', '')[:16]}...")
+            # Future: upsert poll from event data
+            try:
+                data = json.loads(content)
+                self.stdout.write(f"  poll: {data.get('title', 'untitled')}")
+            except json.JSONDecodeError:
+                pass
+
+        elif kind == 1111:
+            self.stdout.write(f"[gossip_worker] received vote event: {event.get('id', '')[:16]}...")
+            # Future: idempotent vote ingestion from event data
+            try:
+                data = json.loads(content)
+                self.stdout.write(f"  vote: poll={data.get('poll_id')}, voter={data.get('voter_did', '')[:16]}...")
+            except json.JSONDecodeError:
+                pass

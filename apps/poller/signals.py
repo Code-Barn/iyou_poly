@@ -16,8 +16,9 @@
 """
 Signals for the `poller` app.
 
-This module defines signals for handling events related to federated poll synchronization,
-such as creating, updating, and deleting polls and votes.
+This module defines signals for federated poll synchronization via Nostr protocol.
+On local model changes, events are broadcast as Nostr events (kind:30023 for polls,
+kind:1111 for votes) to configured relays.
 """
 
 from django.db import models
@@ -27,19 +28,12 @@ from django.dispatch import receiver
 from apps.core.models import FederatedData, FederatedNode
 from apps.poller.models import Poll, PollOption, Vote
 
+from . import nostr
+
 
 @receiver(post_save, sender=PollOption)
 def sync_poll_option_on_save(sender, instance, created, **kwargs):
-    """
-    Signal receiver to synchronize a poll when its options are changed.
-
-    Args:
-        sender: The model class sending the signal.
-        instance: The instance of PollOption being saved.
-        created: Boolean indicating if the instance was created.
-        **kwargs: Additional keyword arguments.
-    """
-    # Skip synchronization if the PollOption is being created
+    """Re-broadcast poll when its options change."""
     if created:
         return
     sync_poll(instance.poll)
@@ -47,28 +41,12 @@ def sync_poll_option_on_save(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=Poll)
 def sync_poll_on_save(sender, instance, created, **kwargs):
-    """
-    Signal receiver to synchronize a poll when it is saved.
-
-    Args:
-        sender: The model class sending the signal.
-        instance: The instance of Poll being saved.
-        created: Boolean indicating if the instance was created.
-        **kwargs: Additional keyword arguments.
-    """
+    """Broadcast poll definition as kind:30023 Nostr event."""
     sync_poll(instance, created)
 
 
 def sync_poll(poll, created=False):
-    """
-    Synchronize a poll to the federated database.
-
-    Args:
-        poll: The Poll instance to synchronize.
-        created: Boolean indicating if the poll was just created.
-    """
-    # Convert the poll to a federated data entry
-    # Evaluate the options queryset to ensure it is not empty
+    """Persist poll to local FederatedData and broadcast via Nostr."""
     options = list(poll.options.all())
     poll_data = {
         "title": poll.title,
@@ -85,19 +63,17 @@ def sync_poll(poll, created=False):
         "options": [{"text": option.text, "votes": option.votes} for option in options],
     }
 
-    # Get or create the local federated node
     node, _ = FederatedNode.objects.get_or_create(
         name="local",
         defaults={
-            "endpoint": "https://local.example.com",
-            "public_key": "public-key-local",
+            "endpoint": "",
+            "public_key": "local",
             "is_active": True,
         },
     )
 
     try:
-        # Check if a federated data entry already exists for this poll
-        federated_data, created = FederatedData.objects.get_or_create(
+        federated_data, created_flag = FederatedData.objects.get_or_create(
             node=node,
             data_type="poll",
             data_id=str(poll.id),
@@ -107,51 +83,33 @@ def sync_poll(poll, created=False):
                 "is_active": poll.is_active,
             },
         )
-
-        if not created:
-            # Update the existing federated data entry
+        if not created_flag:
             federated_data.data = poll_data
-            # Only increment version if the poll was not just created
             federated_data.version += 1
             federated_data.is_active = poll.is_active
             federated_data.save()
     except Exception as e:
-        # Log the error and continue without synchronization
         print(f"Error synchronizing poll: {e}")
         return
+
+    nostr.publish_poll(poll)
 
 
 @receiver(post_delete, sender=Poll)
 def sync_poll_on_delete(sender, instance, **kwargs):
-    """
-    Signal receiver to synchronize a poll when it is deleted.
-
-    Args:
-        sender: The model class sending the signal.
-        instance: The instance of Poll being deleted.
-        **kwargs: Additional keyword arguments.
-    """
-    # Mark the federated data entry as inactive
+    """Mark poll inactive in local ledger and broadcast tombstone via Nostr."""
     FederatedData.objects.filter(
         data_type="poll",
         data_id=str(instance.id),
     ).update(is_active=False)
 
+    instance.is_active = False
+    nostr.publish_poll(instance)
+
 
 @receiver(post_save, sender=Vote)
 def sync_vote_on_save(sender, instance, created, **kwargs):
-    """
-    Signal receiver to synchronize a vote when it is saved.
-
-    Always increments the PollOption.votes counter on vote creation,
-    and optionally syncs to federated data if a FederatedData entry exists.
-
-    Args:
-        sender: The model class sending the signal.
-        instance: The instance of Vote being saved.
-        created: Boolean indicating if the instance was created.
-        **kwargs: Additional keyword arguments.
-    """
+    """Increment option counter and broadcast vote as kind:1111 Nostr event."""
     if created:
         option = instance.option
         option.votes = models.F("votes") + 1
@@ -171,3 +129,5 @@ def sync_vote_on_save(sender, instance, created, **kwargs):
             federated_data.data = poll_data
             federated_data.version = models.F("version") + 1
             federated_data.save(update_fields=["data", "version"])
+
+        nostr.publish_vote(instance, instance.poll_id)

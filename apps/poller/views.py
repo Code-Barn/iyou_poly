@@ -706,12 +706,16 @@ def update_poll(request: HttpRequest, poll_id: int) -> HttpResponse:
 
 
 # DRF Views for decentralized polling
+from django.views.decorators.csrf import csrf_exempt
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.models import ScopeType, Scope, CredentialIssuance
+from apps.core.utils import err, ok
+from apps.core.verification import verify_vote_signature
 
 from .models import Poll, PollOption, Vote
 from .serializers import (
@@ -890,18 +894,35 @@ class VoteViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class CastVoteAPIView(APIView):
     """
-    API endpoint for casting a vote.
+    API endpoint for casting a vote (idempotent, headless).
 
     POST /api/polls/{poll_id}/vote/
+
+    Accepts anonymous requests.  Authentication is replaced by
+    cryptographic signature verification: the request must include a
+    ``signature`` that proves control of ``voter_did``.
+
+    If a vote for this (poll, voter_did) already exists AND the signature
+    matches, returns duplicate-success (201) instead of failing.
     """
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def _verify_signature(
+        self, voter_did: str, signature_hex: str, vote_envelope: dict
+    ) -> bool:
+        """Delegate to ``apps.core.verification.verify_vote_signature``."""
+        return verify_vote_signature(voter_did, signature_hex, vote_envelope)
 
     def post(self, request, poll_id):
         serializer = VoteCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                {"error": "Validation error", "details": serializer.errors},
+                err("Validation error", details=dict(serializer.errors)),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -911,20 +932,46 @@ class CastVoteAPIView(APIView):
             poll = Poll.objects.get(id=poll_id, is_active=True)
         except Poll.DoesNotExist:
             return Response(
-                {"error": "Poll not found or inactive"},
+                err("Poll not found or inactive"),
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         if poll.is_expired:
             return Response(
-                {"error": "Poll has ended"}, status=status.HTTP_400_BAD_REQUEST
+                err("Poll has ended"), status=status.HTTP_400_BAD_REQUEST
             )
 
         voter_did = data.get("voter_did")
+        signature = data.get("signature", "")
 
-        if Vote.objects.filter(poll=poll, voter_did=voter_did).exists():
+        vote_envelope = {
+            "poll_id": poll.id,
+            "option_id": data.get("option_id"),
+            "voter_did": voter_did,
+            "timestamp": datetime.datetime.now().isoformat(),
+        }
+
+        # --- Headless signature verification ---
+        if not self._verify_signature(voter_did, signature, vote_envelope):
             return Response(
-                {"error": "Already voted in this poll"},
+                err("Cryptographic signature validation failure."),
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # --- Idempotency check ---
+        existing_vote = Vote.objects.filter(poll=poll, voter_did=voter_did).first()
+        if existing_vote:
+            if existing_vote.signature == signature:
+                return Response(
+                    ok(details={
+                        "vote_id": existing_vote.id,
+                        "duplicate": True,
+                        "message": "Vote already recorded",
+                    }),
+                    status=status.HTTP_201_CREATED,
+                )
+            return Response(
+                err("Already voted in this poll"),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -933,11 +980,10 @@ class CastVoteAPIView(APIView):
             credential = data.get("credential")
             if not credential:
                 return Response(
-                    {"error": "Credential required to vote in this poll"},
+                    err("Credential required to vote in this poll"),
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Verify credential
             verify_url = request.build_absolute_uri("/api/credentials/verify/")
             import requests as req
 
@@ -956,10 +1002,8 @@ class CastVoteAPIView(APIView):
 
             if not verify_response.ok or not verify_response.json().get("can_vote"):
                 return Response(
-                    {
-                        "error": "Credential verification failed",
-                        "details": verify_response.json(),
-                    },
+                    err("Credential verification failed",
+                        details=verify_response.json()),
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -967,16 +1011,14 @@ class CastVoteAPIView(APIView):
             option = PollOption.objects.get(id=data["option_id"], poll=poll)
         except PollOption.DoesNotExist:
             return Response(
-                {"error": "Option not found"}, status=status.HTTP_404_NOT_FOUND
+                err("Option not found"), status=status.HTTP_404_NOT_FOUND
             )
 
-        # Get user by DID (username is the DID from OIDC)
         try:
             user = User.objects.get(username=voter_did)
         except User.DoesNotExist:
             user = None
 
-        # Generate audit trail hash (bridge signing for votes comes later)
         import hashlib
         sign_data = {
             "poll_id": poll.id,
@@ -984,7 +1026,8 @@ class CastVoteAPIView(APIView):
             "voter_did": voter_did,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        signature = data.get("signature", "") or hashlib.sha256(json.dumps(sign_data, sort_keys=True).encode()).hexdigest()
+        if not signature:
+            signature = hashlib.sha256(json.dumps(sign_data, sort_keys=True).encode()).hexdigest()
 
         vote = Vote.objects.create(
             poll=poll,
@@ -998,14 +1041,12 @@ class CastVoteAPIView(APIView):
             verification_details={"credential_verified": True},
         )
 
-        # Counter increment handled by post_save signal on Vote
-
         return Response(
-            {
+            ok(details={
                 "vote_id": vote.id,
-                "status": "success",
+                "duplicate": False,
                 "message": "Vote recorded successfully",
-            },
+            }),
             status=status.HTTP_201_CREATED,
         )
 
@@ -1022,7 +1063,7 @@ class CheckVotingEligibilityAPIView(APIView):
 
         if not voter_did:
             return Response(
-                {"error": "voter_did query parameter required"},
+                err("voter_did query parameter required"),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1030,39 +1071,26 @@ class CheckVotingEligibilityAPIView(APIView):
             poll = Poll.objects.get(id=poll_id, is_active=True)
         except Poll.DoesNotExist:
             return Response(
-                {"error": "Poll not found or inactive"},
+                err("Poll not found or inactive"),
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         if poll.is_expired:
-            return Response({"eligible": False, "reason": "Poll has ended"})
+            return Response(ok(details={
+                "eligible": False, "reason": "Poll has ended",
+            }))
 
         # Check if already voted
         if Vote.objects.filter(poll=poll, voter_did=voter_did).exists():
-            return Response({"eligible": False, "reason": "Already voted in this poll"})
+            return Response(ok(details={
+                "eligible": False, "reason": "Already voted in this poll",
+            }))
+
+        eligible = True
+        reason = None
 
         # Check scope requirements
-        eligibility = {
-            "eligible": True,
-            "requires_credential": False,
-            "scope_type": None,
-            "scope_value": None,
-            "credential_type": None,
-        }
-
         if poll.required_scope_type:
-            eligibility["requires_credential"] = True
-            eligibility["scope_type"] = poll.required_scope_type.name
-            eligibility["scope_value"] = (
-                poll.required_scope.value if poll.required_scope else None
-            )
-            eligibility["credential_type"] = (
-                poll.required_credential_type.name
-                if poll.required_credential_type
-                else None
-            )
-
-            # Check if voter has valid credential
             if poll.required_credential_type:
                 has_cred = CredentialIssuance.objects.filter(
                     holder_did=voter_did,
@@ -1072,12 +1100,15 @@ class CheckVotingEligibilityAPIView(APIView):
                 ).exists()
 
                 if not has_cred:
-                    eligibility["eligible"] = False
-                    eligibility["reason"] = (
-                        f"No valid {poll.required_credential_type.name} credential for scope {poll.required_scope.value if poll.required_scope else ''}"
+                    eligible = False
+                    reason = (
+                        f"No valid {poll.required_credential_type.name} credential"
                     )
 
-        return Response(eligibility)
+        return Response(ok(details={
+            "eligible": eligible,
+            "reason": reason,
+        }))
 
 
 @login_required

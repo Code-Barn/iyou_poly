@@ -33,6 +33,7 @@ env = environ.Env(
     POLY_DEBUG=(bool, True),
     POLY_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     GUNICORN_WORKERS=(int, 4),
+    NOSTR_RELAYS=(list, ["wss://relay.iyou.me"]),
 )
 
 environ.Env.read_env()
@@ -239,3 +240,11 @@ OIDC_STORE_ID_TOKEN = True
 
 # Open trust model by default (allow any federated server)
 # This can be changed to a more restrictive model in production
+
+# Nostr Protocol Settings
+NOSTR_PRIVATE_KEY = env.str(
+    "NOSTR_PRIVATE_KEY",
+    default="",
+)
+NOSTR_RELAYS = env.list("NOSTR_RELAYS")
+NOSTR_ENABLED = bool(NOSTR_PRIVATE_KEY)
