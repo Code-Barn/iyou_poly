@@ -213,6 +213,16 @@ class Poll(models.Model):
         default=True,
         help_text=_("Whether this poll is active and available for voting."),
     )
+    # Write-in ballot governance
+    allow_write_ins = models.BooleanField(
+        default=False,
+        help_text=_("Allow voters to submit write-in ballot options."),
+    )
+    write_in_display_limit = models.PositiveIntegerField(
+        default=5,
+        help_text=_("Max write-in options shown in the leaderboard."),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -311,6 +321,18 @@ class PollOption(models.Model):
         help_text=_("DEPRECATED — use dynamic_vote_count instead."),
     )
 
+    # Write-in ballot governance
+    is_write_in = models.BooleanField(
+        default=False,
+        help_text=_("Whether this is a crowd-sourced write-in option."),
+    )
+    nominated_by = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text=_("DID of the voter who first proposed this write-in."),
+    )
+
     @property
     def dynamic_vote_count(self):
         """Accurate tally computed via timestamp-derived aggregation.
@@ -330,7 +352,6 @@ class PollOption(models.Model):
     class Meta:
         verbose_name = _("Poll Option")
         verbose_name_plural = _("Poll Options")
-        unique_together = ("poll", "text")
 
     def __str__(self):
         return f"{self.poll.title}: {self.text}"

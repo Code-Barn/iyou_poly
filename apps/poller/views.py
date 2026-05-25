@@ -1017,6 +1017,50 @@ class CastVoteAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
+        # --- Write-in ballot resolution ---
+        write_in_text = data.get("write_in_text", "").strip()
+        if write_in_text:
+            if not poll.allow_write_ins:
+                return Response(
+                    err("Write-in ballots are not enabled for this poll"),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            import unicodedata
+
+            normalized = unicodedata.normalize("NFKC", write_in_text)
+            normalized = " ".join(normalized.split())
+            if not normalized:
+                return Response(
+                    err("Write-in text cannot be empty after normalization"),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            existing = PollOption.objects.filter(
+                poll=poll, text__iexact=normalized
+            ).first()
+            if existing:
+                data["option_id"] = existing.id
+            else:
+                try:
+                    new_option = PollOption.objects.create(
+                        poll=poll,
+                        text=normalized,
+                        is_write_in=True,
+                        nominated_by=voter_did,
+                    )
+                    data["option_id"] = new_option.id
+                except Exception:
+                    # Race guard: another worker inserted the same text between
+                    # our filter and create.  Re-try the lookup instead of
+                    # propagating an unhandled error.
+                    existing = PollOption.objects.filter(
+                        poll=poll, text__iexact=normalized
+                    ).first()
+                    if existing:
+                        data["option_id"] = existing.id
+                    else:
+                        raise
+
         # --- Idempotency / re-vote check ---
         existing_vote = Vote.objects.filter(
             poll=poll, voter_did=voter_did, is_current=True

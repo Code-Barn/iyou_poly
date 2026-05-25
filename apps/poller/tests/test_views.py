@@ -13,12 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.poller.models import Poll, PollOption, PollType, TemporalPollType, Vote
+from apps.poller.serializers import PollResultsSerializer
 
 User = get_user_model()
 
@@ -400,3 +403,197 @@ class TemporalPollingTests(TestCase):
         self.assertEqual(poll.total_votes, 1)
         self.assertEqual(option_a.dynamic_vote_count, 0)
         self.assertEqual(option_b.dynamic_vote_count, 1)
+
+
+class WriteInBallotTests(TestCase):
+    """Write-in ballot option and leaderboard tests."""
+
+    def setUp(self):
+        # Disconnect a pre-existing DataSyncLog signal that crashes on INSERT
+        # with F() version expressions.  Restored in tearDown.
+        from django.db.models.signals import post_save
+        from apps.core.models import FederatedData
+        from apps.core.signals import log_federated_data_on_save
+
+        post_save.disconnect(log_federated_data_on_save, sender=FederatedData)
+        self._reconnect_signal = lambda: post_save.connect(
+            log_federated_data_on_save, sender=FederatedData
+        )
+
+        self.user = User.objects.create_user(username="creator")
+        self.poll = Poll.objects.create(
+            title="Write-In Poll",
+            created_by=self.user,
+            poll_type=PollType.PUBLIC,
+            temporal_type=TemporalPollType.ONGOING,
+            allow_write_ins=True,
+        )
+        self.authored = PollOption.objects.create(
+            poll=self.poll, text="Official Option"
+        )
+
+    def tearDown(self):
+        self._reconnect_signal()
+
+    def _post_vote(self, payload):
+        payload.setdefault("voter_did", "did:key:z6Mtest")
+        payload.setdefault("signature", "ab" * 64)
+        url = reverse("cast_vote_api", args=[self.poll.id])
+        return self.client.post(
+            url, payload, content_type="application/json"
+        )
+
+    # --- Test 1: write-in on disabled poll rejected ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_write_in_on_disabled_poll_rejected(self, _mock_sig):
+        self.poll.allow_write_ins = False
+        self.poll.save(update_fields=["allow_write_ins"])
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "Nope",
+        })
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertFalse(data["valid"])
+        self.assertIn("not enabled", data["error"].lower())
+
+    # --- Test 2: write-in normalization coalesces ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_write_in_normalization_coalesces(self, _mock_sig):
+        # First voter: "Donald  Duck" (extra spaces)
+        r1 = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "Donald  Duck",
+            "voter_did": "did:key:z6Mvoter1",
+        })
+        self.assertEqual(r1.status_code, 201)
+        options_a = PollOption.objects.filter(
+            poll=self.poll, text__iexact="donald duck"
+        )
+        self.assertEqual(options_a.count(), 1)
+        opt = options_a.first()
+        self.assertTrue(opt.is_write_in)
+        self.assertEqual(opt.nominated_by, "did:key:z6Mvoter1")
+
+        # Second voter: "donald duck" (lowercase)
+        r2 = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "donald duck",
+            "voter_did": "did:key:z6Mvoter2",
+        })
+        self.assertEqual(r2.status_code, 201)
+        # Still exactly one PollOption for this text
+        self.assertEqual(
+            PollOption.objects.filter(poll=self.poll, text__iexact="donald duck").count(),
+            1,
+        )
+
+    # --- Test 3: write-in creates option on first use ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_write_in_creates_option_on_first_use(self, _mock_sig):
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "Brand New Write-In",
+        })
+        self.assertEqual(response.status_code, 201)
+        opt = PollOption.objects.filter(
+            poll=self.poll, text="Brand New Write-In"
+        ).first()
+        self.assertIsNotNone(opt)
+        self.assertTrue(opt.is_write_in)
+
+    # --- Test 4: write-in coalesces to authored option ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_write_in_coalesces_to_authored_option(self, _mock_sig):
+        # Match the authored option from setUp case-insensitively
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "official option",
+        })
+        self.assertEqual(response.status_code, 201)
+        vote = Vote.objects.filter(poll=self.poll).first()
+        self.assertEqual(vote.option_id, self.authored.id)
+        self.assertFalse(vote.option.is_write_in)
+
+    # --- Test 5: write-in on mutable poll + re-vote ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_write_in_revote_mutable_poll(self, _mock_sig):
+        self.poll.is_mutable = True
+        self.poll.save(update_fields=["is_mutable"])
+
+        # Vote for write-in "Alpha"
+        r1 = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "Alpha",
+        })
+        self.assertEqual(r1.status_code, 201)
+        alpha = PollOption.objects.get(poll=self.poll, text="Alpha")
+
+        # Re-vote for write-in "Beta"
+        r2 = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": 0,
+            "write_in_text": "Beta",
+        })
+        self.assertEqual(r2.status_code, 201)
+        beta = PollOption.objects.get(poll=self.poll, text="Beta")
+
+        current_vote = Vote.objects.filter(
+            poll=self.poll, voter_did="did:key:z6Mtest", is_current=True
+        ).first()
+        self.assertEqual(current_vote.option_id, beta.id)
+
+        old_votes = Vote.objects.filter(
+            poll=self.poll, voter_did="did:key:z6Mtest", is_current=False
+        )
+        self.assertEqual(old_votes.count(), 1)
+        self.assertEqual(old_votes.first().option_id, alpha.id)
+
+    # --- Test 6: serializer splits core vs write-in buckets ---
+
+    def test_results_serializer_splits_core_and_write_ins(self):
+        PollOption.objects.create(poll=self.poll, text="Core A")
+        PollOption.objects.create(
+            poll=self.poll, text="Write A", is_write_in=True
+        )
+        PollOption.objects.create(
+            poll=self.poll, text="Write B", is_write_in=True
+        )
+        serializer = PollResultsSerializer(self.poll)
+        data = serializer.data
+        self.assertIn("core_options", data)
+        self.assertIn("write_in_leaderboard", data)
+        core_texts = {o["option"] for o in data["core_options"]}
+        write_texts = {o["option"] for o in data["write_in_leaderboard"]}
+        self.assertIn("Core A", core_texts)
+        self.assertIn("Write A", write_texts)
+        self.assertIn("Write B", write_texts)
+        # Authored option should NOT appear in write-in leaderboard
+        self.assertNotIn("Core A", write_texts)
+
+    # --- Test 7: write-in leaderboard truncated to display_limit ---
+
+    def test_write_in_leaderboard_truncated(self):
+        self.poll.write_in_display_limit = 3
+        self.poll.save(update_fields=["write_in_display_limit"])
+        for i in range(5):
+            PollOption.objects.create(
+                poll=self.poll,
+                text=f"Write-in {i}",
+                is_write_in=True,
+            )
+        serializer = PollResultsSerializer(self.poll)
+        self.assertLessEqual(
+            len(serializer.data["write_in_leaderboard"]), 3
+        )

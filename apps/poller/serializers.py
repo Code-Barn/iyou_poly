@@ -206,12 +206,16 @@ class VoteCreateSerializer(serializers.Serializer):
     signature = serializers.CharField(required=False, allow_blank=True)
     credential = serializers.JSONField(required=False)
     credential_cid = serializers.CharField(required=False, allow_blank=True)
+    write_in_text = serializers.CharField(
+        required=False, allow_blank=True, default=""
+    )
 
 
 class PollResultsSerializer(serializers.ModelSerializer):
     """Serializer for poll results (dynamically computed via timestamp)."""
 
-    options = serializers.SerializerMethodField()
+    core_options = serializers.SerializerMethodField()
+    write_in_leaderboard = serializers.SerializerMethodField()
     total_votes = serializers.SerializerMethodField()
 
     class Meta:
@@ -223,7 +227,8 @@ class PollResultsSerializer(serializers.ModelSerializer):
             "ipfs_cid",
             "votes_merkle_root",
             "vote_count_anchor",
-            "options",
+            "core_options",
+            "write_in_leaderboard",
             "total_votes",
             "created_at",
         ]
@@ -245,19 +250,22 @@ class PollResultsSerializer(serializers.ModelSerializer):
             .values("latest_id")
         )
 
-    def get_options(self, obj):
+    def _build_option_results(self, obj, write_in_filter):
         from django.db.models import Count, Q
 
         latest_ids = self._latest_vote_ids(obj.id)
 
-        options = obj.options.annotate(
+        options = obj.options.filter(is_write_in=write_in_filter).annotate(
             current_vote_count=Count(
                 "vote_options",
                 filter=Q(vote_options__id__in=latest_ids),
             )
+        ).order_by("-current_vote_count")
+
+        total = (
+            Vote.objects.filter(id__in=latest_ids).count()
         )
         results = []
-        total = sum(opt.current_vote_count for opt in options)
         for option in options:
             percentage = (option.current_vote_count / total * 100) if total > 0 else 0
             results.append(
@@ -268,6 +276,13 @@ class PollResultsSerializer(serializers.ModelSerializer):
                 }
             )
         return results
+
+    def get_core_options(self, obj):
+        return self._build_option_results(obj, write_in_filter=False)
+
+    def get_write_in_leaderboard(self, obj):
+        limit = obj.write_in_display_limit
+        return self._build_option_results(obj, write_in_filter=True)[:limit]
 
     def get_total_votes(self, obj):
         return Vote.objects.filter(
