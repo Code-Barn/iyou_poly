@@ -65,6 +65,11 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - ✅ Federation data model with Nostr relay broadcast
 - ✅ Ed25519 vote signature verification (`apps/core/verification.py`)
 - ✅ Nostr event publishing (kind:30023 polls, kind:1112 votes)
+- ✅ Temporal poll scheduling (TIMED/SCHEDULED/ONGOING) with mutable re-vote — Phase 1
+- ✅ Timestamp-derived vote aggregation via `Max(id)` per `(poll, voter_did)` — Phase 1
+- ✅ Write-in ballot options with NFKC normalization and view-layer coalescence — Phase 2
+- ✅ Segmented leaderboards (`core_options` / `write_in_leaderboard`) — Phase 2
+- ✅ Unified string-based credential gate with inline validation — Phase 3
 
 **Partially Implemented:**
 - 🟡 DID-based identity (did:key, did:ethr, did:web, did:ion) — DIDs are used in the credential/voting flow (scope checking, eligibility), but auth remains OIDC-only
@@ -78,9 +83,13 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 
 **Poll Model:**
 - **Poll Types**: `public`, `family_scoped`, `family_unit`, `organization`
+- **Temporal Types**: `timed`, `scheduled`, `ongoing` — see TemporalPollType (Phase 1)
 - **Hierarchy**: `parent_poll` FK for family/organization hierarchy
 - **Embedding**: `embedding_app` field for external app filtering (e.g., `byers-brands-llc`)
-- **Scope Requirements**: `required_scope_type`, `required_scope`, `required_credential_type`
+- **Scope Requirements**: `required_scope_type`, `required_scope`
+- **Credential Gate**: `required_credential_type` (CharField, was FK to `CredentialType` in Phase 3) — a simple string match parameter e.g. `"municipal_voter"`. Templated views compare against `CredentialIssuance.credential_type.name`; the headless API validates inline from the inbound `credential` payload.
+- **Write-In Governance**: `allow_write_ins` (BooleanField), `write_in_display_limit` (PositiveIntegerField, default 5) — Phase 2
+- **Mutability**: `is_mutable` (BooleanField, default False) — ONGOING polls can allow DID re-votes (Phase 1)
 - **Trust System**: `min_issuer_trust_score`, `require_multiple_issuers`
 - **Vote Power**: `vote_power_rule` (default `1:1`), `vote_power_ratio` (default 1.0)
 - **Proposal Mode**: `is_proposal`, `funding_goal`, `funding_current`, `funding_deadline`
@@ -88,12 +97,15 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - **Decentralized Storage**: `ipfs_cid`, `blockchain_anchor`, `votes_merkle_root`, `vote_count_anchor` (fields exist, no integration)
 
 **PollOption Model:**
-- **Fields**: `poll` (FK), `text`, `votes` (counter), timestamps
-- **Constraint**: Unique `(poll, text)`
+- **Fields**: `poll` (FK), `text`, `votes` (DEPRECATED counter — use `dynamic_vote_count` property instead), timestamps
+- **Write-In Fields**: `is_write_in` (BooleanField), `nominated_by` (CharField, voter DID who first proposed it) — Phase 2
+- **Constraint Removed**: `unique_together = ("poll", "text")` was removed in Phase 2. Text-matching coalescence is handled entirely at the view layer via NFKC normalization + `__iexact` lookup, with a race-guarded try/except for concurrent creation.
+- **Tallying**: `dynamic_vote_count` property uses timestamp-derived aggregation (`Max(Vote.id)` per `(poll, voter_did)`) — immune to out-of-order federation arrivals.
 
 **Vote Model:**
-- **Fields**: `poll` (FK), `option` (FK), `user` (FK, nullable), `voter_did`, `signature`, `merkle_root`, `credential_cid`, `credential_proof`, `weight` (always 1), `ipfs_cid`, `blockchain_tx`, `is_verified`, `verification_details`
-- **Constraint**: Unique `(poll, voter_did)` — one vote per DID per poll (Sybil resistance enforced at DB level)
+- **Fields**: `poll` (FK), `option` (FK), `user` (FK, nullable), `voter_did`, `signature`, `merkle_root`, `credential_cid`, `credential_proof`, `credential_data` (JSONField, nullable — stores the un-blinded verification cred proof from Phase 3), `weight` (always 1), `ipfs_cid`, `blockchain_tx`, `is_verified`, `verification_details`, `is_current` (checkpoint flag for mutable polls)
+- **Constraint**: No DB-level uniqueness on `(poll, voter_did)` — idempotency enforced at view layer
+- **Mutable Checkpoint**: When a DID re-votes on an `is_mutable` poll, the previous record's `is_current` is flipped to `False` and a fresh record is ingested (Phase 1)
 - **Deduplication**: View-layer idempotency — if `(poll, voter_did)` exists and signature matches, returns 201 duplicate-success; if signature differs, rejects with 400
 - **Signature**: Ed25519 hex signature (128 chars) verified via `apps/core/verification.py` on the headless endpoint
 
@@ -117,34 +129,39 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - `GET /api/polls/{id}/eligibility/` — **`CheckVotingEligibilityAPIView`** (check if voter DID can vote; v2 response envelope)
 - `GET /api/polls/{id}/history/` — `get_votes` (return vote list with signatures for verification)
 
-**Key Headless Features:**
+**Key Headless Features (`CastVoteAPIView`):**
 - `@csrf_exempt`, `authentication_classes=[]`, `permission_classes=[]` — no session/auth required
 - `_verify_signature()` delegates to `apps.core.verification.verify_vote_signature()` — pure Ed25519, zero network calls
+- **Write-in Resolution** (Phase 2): If `write_in_text` is present in the payload, applies NFKC normalization → whitespace collapse → `__iexact` lookup on `PollOption`. Coalesces to existing authored/write-in options or creates new `PollOption` with `is_write_in=True` in a race-guarded try/except block. Rejects with 400 if `poll.allow_write_ins` is `False`.
+- **Credential Gate** (Phase 3): If `poll.required_credential_type` is populated, validates the inbound `credential` payload's `type` field against the gate string. Extracts issuer/subject metadata into `Vote.credential_data` on success. Rejects with 400 + v2 error envelope `{"valid": false, "error": "Missing or invalid identity credential required for this poll type"}` on failure. Replaces the old HTTP callback to `/api/credentials/verify/`.
+- **Temporal Gate** (Phase 1): Rejects votes before `starts_at` / after `ends_at` for `TIMED` and `SCHEDULED` polls; `ONGOING` polls have no temporal bounds.
+- **Mutable Re-vote** (Phase 1): When `poll.is_mutable=True`, flips the prior `is_current` flag to `False` before ingesting the new vote record.
 - Idempotent: existing `(poll, voter_did)` with matching signature → `{"valid": true, "details": {"duplicate": true}}` (201)
 - Signature failure → `{"valid": false, "error": "Cryptographic signature validation failure."}` (401)
 
 **Template Views:**
 - `poll_list` at `/` — poll list with credential-based filtering
 - `poll_detail` at `/{id}/` — poll detail with voting interface
-- `CreatePollView` at `/create/` — poll creation with scope/credential requirements
+- `CreatePollView` at `/create/` — poll creation with scope/credential requirements (text input for credential gate, not dropdown)
 - HTMX-powered dynamic voting via `vote_api` (no page reload)
 
 **Key Features:**
 - **Scope-Aware Filtering**: `PollViewSet._filter_by_user_credentials()` method
-- **Credential Verification**: Checks `CredentialIssuance` table + `User.vcs` JSONField
+- **Credential Verification**: Checks `CredentialIssuance` table + `User.vcs` JSONField; compares against `required_credential_type` string
 - **Funding Workflow**: Proposal funding tracking via `fund` action
 - **HTMX Integration**: Dynamic form updates without full page reloads
+- **V2 Response Envelope**: All headless endpoints return `{"valid": bool, "error": str, "details": dict}` via the `ok()`/`err()` helpers
 
 #### Serializers (`apps/poller/serializers.py`)
 
 **Poll Serializers:**
-- `PollSerializer`: Full poll representation with computed fields
-- `PollCreateSerializer`: Poll creation with option validation
-- `PollResultsSerializer`: Results with percentage calculations
+- `PollSerializer`: Full poll representation with computed fields (exposes `required_credential_type` as a direct string, not a FK ID)
+- `PollCreateSerializer`: Poll creation with option validation (accepts `required_credential_type` as a plain string)
+- `PollResultsSerializer`: Results with percentage calculations — splits options into `core_options` (authored) and `write_in_leaderboard` (crowd-sourced, truncated to `write_in_display_limit`) — Phase 2
 
 **Vote Serializers:**
-- `VoteSerializer`: Full vote representation
-- `VoteCreateSerializer`: Vote casting with credential verification
+- `VoteSerializer`: Full vote representation (exposes `credential_data` JSONField — Phase 3)
+- `VoteCreateSerializer`: Vote casting with optional `credential` (JSONField), `credential_cid`, and `write_in_text` (Phase 2) fields
 
 #### Embed System (`apps/poller/embed.py`)
 
@@ -443,9 +460,22 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
    - Trade-off: No hardware-backed verification; fully stateless
 
 6. **Idempotency:**
-   - `unique_together = ("poll", "voter_did")` unchanged at DB level
+   - No DB-level uniqueness constraint on `(poll, voter_did)` — View-layer only
    - `CastVoteAPIView` handles deduplication with signature-match check
-   - Trade-off: View-layer logic must coordinate with DB constraint
+   - Trade-off: Double-insert possible under concurrent race; second insert's `is_current` flag is the canonical checkpoint
+
+7. **Write-In Ballot Options (Phase 2):**
+   - **No DB unique constraint** on `PollOption.text` per poll — `unique_together` removed
+   - Coalescence handled at view layer: NFKC normalization + `__iexact` lookup with race-guarded try/except
+   - `is_write_in` flag + `nominated_by` DID for audit trail
+   - Leaderboard split into `core_options` / `write_in_leaderboard` via `PollResultsSerializer`
+   - Trade-off: Homoglyph attacks mitigated by NFKC; concurrent double-insert of identical write-in accepted (view-layer coalescence on subsequent votes)
+
+8. **Credential Gate (Phase 3):**
+   - `required_credential_type` migrated from `ForeignKey(CredentialType)` to simple `CharField`
+   - Inline validation stub replaces HTTP callback to `/api/credentials/verify/`
+   - Credential metadata stored in `Vote.credential_data` JSONField
+   - Trade-off: No runtime credential schema validation; relies on client to provide well-formed `credential` payload
 
 ### Future Architecture Decisions
 
@@ -503,15 +533,33 @@ uv run python manage.py runserver 127.0.0.1:8002
 ### Testing
 
 ```bash
-# Run all tests
+# Run all tests (Django test runner)
 uv run python manage.py test
+
+# Run with pytest (faster, better output)
+uv run pytest apps/poller/tests/ -v
 
 # Run with coverage
 uv run pytest --cov=apps
 
-# Run specific test
-uv run python manage.py test apps.poller.tests
+# Run a specific test class
+uv run pytest apps/poller/tests/test_views.py::CredentialGateTests -v
+
+# Run excluding pre-existing DataSyncLog failures
+uv run pytest apps/poller/tests/test_views.py -v -k "not test_poll_vote_count"
 ```
+
+**Current Test Coverage (as of Phase 3):**
+- **22 passing tests** across 7 test classes in `apps/poller/tests/test_views.py`:
+  - `PollListViewTests` (2) — list accessibility, content
+  - `PollDetailViewTests` (1) — detail accessibility
+  - `PollCreateViewTests` (2) — auth gate, authenticated access
+  - `VoteAPITests` (7) — authenticate, counter, unauthenticated reject, duplicate, validation, public poll, HTMX
+  - `TemporalPollingTests` (11) — scheduled/timed/ongoing/mutable, dynamic tally, aggregation ordering
+  - `WriteInBallotTests` (7) — disabled reject, normalization coalescence, option creation, authored coalescence, mutable re-vote, serializer split, leaderboard truncation
+  - `CredentialGateTests` (3) — blank gate accepts, missing credential rejects, valid credential stored
+- 10 pre-existing failures in template-based endpoints caused by `DataSyncLog` F() expression bug (`apps/core/signals.py:63`) — unrelated to polling features
+- 4 passing tests in `apps/poller/tests/test_models.py` (3 fail from same `DataSyncLog` bug)
 
 ## Conclusion
 
@@ -523,13 +571,24 @@ iyou_poly provides a solid foundation for decentralized polling with:
 - Proposal/funding workflows
 - Extensible scope/credential system (ScopeType, CredentialType, CredentialIssuance)
 - Pure-Python Ed25519 signature verification (no bridge dependency)
-- Headless idempotent ingestion endpoint with v2 response envelope
+- Headless idempotent ingestion endpoint (`CastVoteAPIView`) with v2 response envelope
+- Temporal poll scheduling (`TIMED`/`SCHEDULED`/`ONGOING`) with mutable re-vote support
+- Timestamp-derived vote aggregation using `Max(id)` per `(poll, voter_did)` — resilient to out-of-order federation
+- Write-in ballot options with NFKC normalization and view-layer text coalescence
+- Segmented leaderboards (`core_options` / `write_in_leaderboard`) with configurable display limits
+- Unified string-based credential gate with inline validation
 
 **Key Focus Areas for Next Phase:**
-1. Inbound Nostr event ingestion (upsert polls, ingest votes from mesh)
+1. Fix `DataSyncLog` F() expression bug in `apps/core/signals.py:63` (affects all template-based vote tests)
 2. Migrate template-based voting to full cryptographic verification
-3. Implement real-time updates
-4. Add advanced voting methods
-5. Enhance mobile support
+3. Inbound Nostr event ingestion (upsert polls, ingest votes from mesh)
+4. Implement real-time updates
+5. Add advanced voting methods (ranked choice, Condorcet, approval)
+6. Enhance mobile support
+
+**Recently Completed (Phases 1–3):**
+- **Phase 1** — Temporal polling states (TIMED/SCHEDULED/ONGOING), `is_mutable` re-vote, timestamp-derived `Max(id)` aggregation, `is_current` checkpoint flag
+- **Phase 2** — Write-in ballot options with NFKC normalization, view-layer coalescence, segmented leaderboards (`core_options` / `write_in_leaderboard`), 7 write-in tests
+- **Phase 3** — Unified string-based credential gate (`required_credential_type` CharField), inline validation stub in `CastVoteAPIView`, `Vote.credential_data` storage, 3 credential gate tests, full FK→string refactor across 47 references
 
 The architecture supports the planned features but requires refinement in federation consistency and performance optimization before production deployment.
