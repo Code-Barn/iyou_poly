@@ -209,7 +209,7 @@ class VoteCreateSerializer(serializers.Serializer):
 
 
 class PollResultsSerializer(serializers.ModelSerializer):
-    """Serializer for poll results (dynamically computed)."""
+    """Serializer for poll results (dynamically computed via timestamp)."""
 
     options = serializers.SerializerMethodField()
     total_votes = serializers.SerializerMethodField()
@@ -228,13 +228,32 @@ class PollResultsSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+    @staticmethod
+    def _latest_vote_ids(poll_id):
+        """Subquery returning the latest ``Vote.id`` per ``voter_did``.
+
+        Uses ``Max('id')`` as a monotonic proxy for the latest
+        cryptographically-signed timestamp.  This is deterministic
+        and resilient to out-of-order block arrival across the mesh.
+        """
+        from django.db.models import Max, Subquery
+
+        return Subquery(
+            Vote.objects.filter(poll_id=poll_id)
+            .values("voter_did")
+            .annotate(latest_id=Max("id"))
+            .values("latest_id")
+        )
+
     def get_options(self, obj):
         from django.db.models import Count, Q
+
+        latest_ids = self._latest_vote_ids(obj.id)
 
         options = obj.options.annotate(
             current_vote_count=Count(
                 "vote_options",
-                filter=Q(vote_options__is_current=True),
+                filter=Q(vote_options__id__in=latest_ids),
             )
         )
         results = []
@@ -251,7 +270,9 @@ class PollResultsSerializer(serializers.ModelSerializer):
         return results
 
     def get_total_votes(self, obj):
-        return Vote.objects.filter(poll=obj, is_current=True).count()
+        return Vote.objects.filter(
+            id__in=self._latest_vote_ids(obj.id),
+        ).count()
 
 
 from django.utils.translation import gettext_lazy as _

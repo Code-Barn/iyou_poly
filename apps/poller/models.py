@@ -265,8 +265,16 @@ class Poll(models.Model):
 
     @property
     def total_votes(self):
-        """Get total vote count (dynamically computed)."""
-        return self.votes.filter(is_current=True).count()
+        """Get total vote count using timestamp-derived aggregation.
+
+        Uses the latest ``Vote.id`` (monotonically increasing) per
+        ``(poll, voter_did)`` as the canonical active checkpoint,
+        making the tally resilient to out-of-order arrival.
+        """
+        latest_ids = Vote.objects.filter(poll=self).values("voter_did").annotate(
+            latest_id=models.Max("id"),
+        ).values("latest_id")
+        return Vote.objects.filter(id__in=latest_ids).count()
 
     @property
     def funding_progress(self):
@@ -283,9 +291,9 @@ class PollOption(models.Model):
     Each poll can have multiple options for users to choose from.
 
     Note: ``votes`` is a **deprecated** denormalized counter.  Federated
-    out-of-order arrivals make it unreliable.  Use
-    ``Vote.objects.filter(option=option, is_current=True).count()`` or the
-    ``dynamic_vote_count`` property for accurate tallies.
+    out-of-order arrivals make it unreliable.  Use the
+    ``dynamic_vote_count`` property (timestamp-derived aggregation via
+    ``Max(id)`` per voter) for canonical tallies.
     """
 
     poll = models.ForeignKey(
@@ -305,8 +313,17 @@ class PollOption(models.Model):
 
     @property
     def dynamic_vote_count(self):
-        """Accurate tally computed from active (is_current) votes."""
-        return Vote.objects.filter(option=self, is_current=True).count()
+        """Accurate tally computed via timestamp-derived aggregation.
+
+        Only the record with the highest ``Vote.id`` (latest insert) per
+        ``(poll, voter_did)`` is counted.  Immune to out-of-order
+        federation arrivals.
+        """
+        latest_ids = Vote.objects.filter(poll=self.poll).values("voter_did").annotate(
+            latest_id=models.Max("id"),
+        ).values("latest_id")
+        return Vote.objects.filter(id__in=latest_ids, option=self).count()
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

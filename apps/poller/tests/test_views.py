@@ -364,3 +364,39 @@ class TemporalPollingTests(TestCase):
         self.assertEqual(option.votes, 0)
         # Dynamic property returns correct value
         self.assertEqual(option.dynamic_vote_count, 1)
+
+    def test_aggregation_uses_latest_id_not_stale_is_current(self):
+        """Timestamp-derived aggregation ignores a stale ``is_current`` flag.
+
+        Simulates out-of-order federation arrival: the previous vote has
+        a higher PK (arrived later) but ``is_current`` incorrectly
+        remained True.  Aggregation must still pick the **latest id**
+        as the active checkpoint.
+        """
+        poll = Poll.objects.create(
+            title="Reorder Test",
+            created_by=self.user,
+            poll_type=PollType.PUBLIC,
+            temporal_type=TemporalPollType.ONGOING,
+            is_mutable=True,
+        )
+        option_a = PollOption.objects.create(poll=poll, text="A")
+        option_b = PollOption.objects.create(poll=poll, text="B")
+        voter = "did:key:z6Mreorder"
+
+        # Vote 1 — ingested first (lower PK)
+        v1 = Vote.objects.create(
+            poll=poll, option=option_a, voter_did=voter,
+            signature="sig1", is_verified=True,
+        )
+        # Vote 2 — ingested later (higher PK), but is_current=False
+        # (simulates out-of-order where the cache flag missed the flip)
+        Vote.objects.create(
+            poll=poll, option=option_b, voter_did=voter,
+            signature="sig2", is_verified=True, is_current=False,
+        )
+
+        # Correct: latest id = vote 2, which voted for option_b
+        self.assertEqual(poll.total_votes, 1)
+        self.assertEqual(option_a.dynamic_vote_count, 0)
+        self.assertEqual(option_b.dynamic_vote_count, 1)
