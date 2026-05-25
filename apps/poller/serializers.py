@@ -45,9 +45,6 @@ class PollSerializer(serializers.ModelSerializer):
     required_scope_value = serializers.CharField(
         source="required_scope.value", read_only=True, allow_null=True
     )
-    required_credential_type_name = serializers.CharField(
-        source="required_credential_type.name", read_only=True, allow_null=True
-    )
     total_votes = serializers.IntegerField(read_only=True)
     is_expired = serializers.BooleanField(read_only=True)
     is_active_now = serializers.BooleanField(read_only=True)
@@ -70,10 +67,8 @@ class PollSerializer(serializers.ModelSerializer):
             "required_scope",
             "required_scope_value",
             "required_credential_type",
-            "required_credential_type_name",
             "min_issuer_trust_score",
             "require_multiple_issuers",
-            "vote_weight",
             "starts_at",
             "ends_at",
             "is_proposal",
@@ -182,6 +177,7 @@ class VoteSerializer(serializers.ModelSerializer):
             "blockchain_tx",
             "is_verified",
             "verification_details",
+            "credential_data",
             "is_current",
             "created_at",
         ]
@@ -192,6 +188,7 @@ class VoteSerializer(serializers.ModelSerializer):
             "blockchain_tx",
             "is_verified",
             "verification_details",
+            "credential_data",
             "is_current",
             "created_at",
         ]

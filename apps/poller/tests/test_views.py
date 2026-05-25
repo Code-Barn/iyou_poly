@@ -597,3 +597,84 @@ class WriteInBallotTests(TestCase):
         self.assertLessEqual(
             len(serializer.data["write_in_leaderboard"]), 3
         )
+
+
+class CredentialGateTests(TestCase):
+    """Credential gate verification for headless CastVoteAPIView."""
+
+    def setUp(self):
+        from django.db.models.signals import post_save
+        from apps.core.models import FederatedData
+        from apps.core.signals import log_federated_data_on_save
+
+        post_save.disconnect(log_federated_data_on_save, sender=FederatedData)
+        self._reconnect_signal = lambda: post_save.connect(
+            log_federated_data_on_save, sender=FederatedData
+        )
+
+        self.user = User.objects.create_user(username="creator")
+        self.poll = Poll.objects.create(
+            title="Gated Poll",
+            created_by=self.user,
+            poll_type=PollType.PUBLIC,
+            temporal_type=TemporalPollType.ONGOING,
+        )
+        self.option = PollOption.objects.create(poll=self.poll, text="Yes")
+
+    def tearDown(self):
+        self._reconnect_signal()
+
+    def _post_vote(self, payload):
+        payload.setdefault("voter_did", "did:key:z6Mgated")
+        payload.setdefault("signature", "cd" * 64)
+        url = reverse("cast_vote_api", args=[self.poll.id])
+        return self.client.post(url, payload, content_type="application/json")
+
+    # --- Test 1: blank gate accepts vote without credential ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_credential_gate_blank_accepts_vote(self, _mock_sig):
+        self.poll.required_credential_type = ""
+        self.poll.save(update_fields=["required_credential_type"])
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": self.option.id,
+        })
+        self.assertEqual(response.status_code, 201)
+
+    # --- Test 2: gated poll rejects missing credential ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_credential_gate_rejects_missing_credential(self, _mock_sig):
+        self.poll.required_credential_type = "municipal_voter"
+        self.poll.save(update_fields=["required_credential_type"])
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": self.option.id,
+        })
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertFalse(data["valid"])
+        self.assertIn("Missing or invalid identity credential", data["error"])
+
+    # --- Test 3: valid credential stored in credential_data ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_credential_gate_stores_valid_credential(self, _mock_sig):
+        self.poll.required_credential_type = "municipal_voter"
+        self.poll.save(update_fields=["required_credential_type"])
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": self.option.id,
+            "credential": {
+                "type": ["municipal_voter"],
+                "issuer": "did:key:z6Missuer",
+                "credentialSubject": {"id": "did:key:z6Mgated"},
+            },
+        })
+        self.assertEqual(response.status_code, 201)
+        vote = Vote.objects.filter(poll=self.poll).first()
+        self.assertIsNotNone(vote)
+        self.assertIsNotNone(vote.credential_data)
+        self.assertEqual(vote.credential_data["type"], "municipal_voter")
+        self.assertEqual(vote.credential_data["issuer"], "did:key:z6Missuer")

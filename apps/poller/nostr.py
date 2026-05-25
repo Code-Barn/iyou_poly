@@ -69,7 +69,7 @@ def make_poll_event(poll, private_key, pubkey_hex) -> dict[str, Any]:
     if poll.required_scope_type:
         tags.append(["scope_type", poll.required_scope_type.name])
     if poll.required_credential_type:
-        tags.append(["credential_type", poll.required_credential_type.name])
+        tags.append(["credential_type", poll.required_credential_type])
 
     content = json.dumps({
         "title": poll.title,

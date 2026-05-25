@@ -25,7 +25,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.models import FederatedData, Scope, ScopeType, CredentialType
+from apps.core.models import FederatedData, Scope, ScopeType
 
 User = get_user_model()
 
@@ -121,13 +121,11 @@ class Poll(models.Model):
         null=True,
         blank=True,
     )
-    required_credential_type = models.ForeignKey(
-        CredentialType,
-        on_delete=models.PROTECT,
-        related_name="polls_requiring_credential",
-        help_text=_("The credential type required to vote in this poll."),
-        null=True,
+    required_credential_type = models.CharField(
+        max_length=100,
         blank=True,
+        null=True,
+        help_text=_("The identity credential required to vote in this poll (e.g., 'municipal_voter')."),
     )
 
     # Trust requirements
@@ -443,6 +441,12 @@ class Vote(models.Model):
         default=dict,
         blank=True,
         help_text=_("Details about vote verification."),
+    )
+
+    credential_data = models.JSONField(
+        blank=True,
+        null=True,
+        help_text=_("Stores the un-blinded verification credential proof package passed during ingestion."),
     )
 
     # Mutable checkpoint support (ONGOING / is_mutable polls)

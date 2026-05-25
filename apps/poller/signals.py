@@ -56,7 +56,7 @@ def sync_poll(poll, created=False):
         if poll.required_scope_type
         else None,
         "required_scope": poll.required_scope.value if poll.required_scope else None,
-        "required_credential_type": poll.required_credential_type.name
+        "required_credential_type": poll.required_credential_type
         if poll.required_credential_type
         else None,
         "is_active": poll.is_active,

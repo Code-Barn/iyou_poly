@@ -329,7 +329,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
         # Get poll and option
         try:
             poll = Poll.objects.select_related(
-                "required_scope_type", "required_scope", "required_credential_type"
+                "required_scope_type", "required_scope"
             ).get(id=poll_id, is_active=True)
             option = PollOption.objects.get(id=option_id, poll=poll)
         except Poll.DoesNotExist:
@@ -441,7 +441,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
 
                 # Check credential type requirement
                 if poll.required_credential_type:
-                    if cred.credential_type != poll.required_credential_type:
+                    if cred.credential_type.name != poll.required_credential_type:
                         continue
 
                 # User has a valid credential
@@ -453,7 +453,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                 for vc_scope in vc_scopes:
                     # Check credential type requirement
                     if poll.required_credential_type:
-                        if poll.required_credential_type.name != vc_scope["type"]:
+                        if poll.required_credential_type != vc_scope["type"]:
                             continue
 
                     # User has a valid VC (we'll allow it since it's in their profile)
@@ -469,7 +469,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
 
                 cred_info = ""
                 if poll.required_credential_type:
-                    cred_info = f" with a {poll.required_credential_type.display_name} credential"
+                    cred_info = f" with a {poll.required_credential_type} credential"
 
                 return JsonResponse(
                     {
@@ -482,7 +482,7 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                         "required_scope_type": poll.required_scope_type.display_name
                         if poll.required_scope_type
                         else None,
-                        "required_credential_type": poll.required_credential_type.display_name
+                        "required_credential_type": poll.required_credential_type
                         if poll.required_credential_type
                         else None,
                     },
@@ -760,7 +760,7 @@ class PollViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Poll.objects.all().select_related(
-            "required_scope_type", "required_scope", "required_credential_type"
+            "required_scope_type", "required_scope"
         ).prefetch_related("options")
 
         # Filter by embedding app (for embedded Poly)
@@ -1083,37 +1083,32 @@ class CastVoteAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # Verify credential if required
-        if poll.required_scope_type and poll.required_credential_type:
+        # --- Credential gate ---
+        credential_data_package = None
+        credential_gate = poll.required_credential_type
+        if credential_gate:
             credential = data.get("credential")
             if not credential:
                 return Response(
-                    err("Credential required to vote in this poll"),
+                    err("Missing or invalid identity credential required for this poll type"),
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            verify_url = request.build_absolute_uri("/api/credentials/verify/")
-            import requests as req
+            cred_type = credential.get("type", "")
+            if isinstance(cred_type, list):
+                cred_type = cred_type[0] if cred_type else ""
 
-            verify_response = req.post(
-                verify_url,
-                json={
-                    "credential": credential,
-                    "required_scope_type": poll.required_scope_type.name
-                    if poll.required_scope_type
-                    else None,
-                    "required_scope_value": poll.required_scope.value
-                    if poll.required_scope
-                    else None,
-                },
-            )
-
-            if not verify_response.ok or not verify_response.json().get("can_vote"):
+            if cred_type != credential_gate:
                 return Response(
-                    err("Credential verification failed",
-                        details=verify_response.json()),
+                    err("Missing or invalid identity credential required for this poll type"),
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
+            credential_data_package = {
+                "type": cred_type,
+                "issuer": credential.get("issuer", ""),
+                "credentialSubject": credential.get("credentialSubject", {}),
+            }
 
         try:
             option = PollOption.objects.get(id=data["option_id"], poll=poll)
@@ -1145,6 +1140,7 @@ class CastVoteAPIView(APIView):
             signature=signature,
             credential_cid=data.get("credential_cid", ""),
             credential_proof=data.get("credential", {}),
+            credential_data=credential_data_package,
             is_verified=True,
             verification_details={"credential_verified": True},
         )
@@ -1207,7 +1203,7 @@ class CheckVotingEligibilityAPIView(APIView):
             if poll.required_credential_type:
                 has_cred = CredentialIssuance.objects.filter(
                     holder_did=voter_did,
-                    credential_type=poll.required_credential_type,
+                    credential_type__name=poll.required_credential_type,
                     scope=poll.required_scope,
                     status="active",
                 ).exists()
@@ -1215,7 +1211,7 @@ class CheckVotingEligibilityAPIView(APIView):
                 if not has_cred:
                     eligible = False
                     reason = (
-                        f"No valid {poll.required_credential_type.name} credential"
+                        f"No valid {poll.required_credential_type} credential"
                     )
 
         return Response(ok(details={
@@ -1294,7 +1290,6 @@ def poll_list(request: HttpRequest) -> HttpResponse:
         .select_related(
             "required_scope_type",
             "required_scope",
-            "required_credential_type",
             "created_by",
         )
     )
@@ -1393,7 +1388,7 @@ class CreatePollView(View):
         Returns:
             HttpResponse: A response containing the poll creation form.
         """
-        from apps.core.models import ScopeType, Scope, CredentialType
+        from apps.core.models import ScopeType, Scope
 
         scope_types = ScopeType.objects.filter(is_active=True).order_by(
             "hierarchy_depth", "name"
@@ -1442,17 +1437,12 @@ class CreatePollView(View):
         else:
             scopes = Scope.objects.filter(is_active=True).select_related("scope_type")
 
-        credential_types = CredentialType.objects.filter(is_active=True).order_by(
-            "name"
-        )
-
         return render(
             request,
             "poller/poll_create.html",
             {
                 "scope_types": scope_types,
                 "scopes": scopes,
-                "credential_types": credential_types,
                 "user_has_credentials": user_has_any_credentials,
             },
         )
@@ -1467,7 +1457,7 @@ class CreatePollView(View):
         Returns:
             HttpResponse: A response redirecting to the poll detail page or showing errors.
         """
-        from apps.core.models import ScopeType, Scope, CredentialType
+        from apps.core.models import ScopeType, Scope
 
         title = request.POST.get("title")
         description = request.POST.get("description", "")
@@ -1479,7 +1469,7 @@ class CreatePollView(View):
         # Handle scope requirements
         required_scope_type_id = request.POST.get("required_scope_type")
         required_scope_id = request.POST.get("required_scope")
-        required_credential_type_id = request.POST.get("required_credential_type")
+        required_credential_type = request.POST.get("required_credential_type") or None
 
         # Validate input
         if not title or not options:
@@ -1501,7 +1491,6 @@ class CreatePollView(View):
                 # Get scope objects if provided
                 required_scope_type = None
                 required_scope = None
-                required_credential_type = None
 
                 if required_scope_type_id:
                     try:
@@ -1515,14 +1504,6 @@ class CreatePollView(View):
                     try:
                         required_scope = Scope.objects.get(id=required_scope_id)
                     except Scope.DoesNotExist:
-                        pass
-
-                if required_credential_type_id:
-                    try:
-                        required_credential_type = CredentialType.objects.get(
-                            id=required_credential_type_id
-                        )
-                    except CredentialType.DoesNotExist:
                         pass
 
                 # Create the poll
