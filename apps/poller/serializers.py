@@ -27,10 +27,12 @@ from .models import Poll, PollOption, Vote
 class PollOptionSerializer(serializers.ModelSerializer):
     """Serializer for PollOption model."""
 
+    dynamic_vote_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = PollOption
-        fields = ["id", "text", "votes", "created_at", "updated_at"]
-        read_only_fields = ["id", "votes", "created_at", "updated_at"]
+        fields = ["id", "text", "votes", "dynamic_vote_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "votes", "dynamic_vote_count", "created_at", "updated_at"]
 
 
 class PollSerializer(serializers.ModelSerializer):
@@ -56,6 +58,8 @@ class PollSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "poll_type",
+            "temporal_type",
+            "is_mutable",
             "parent_poll",
             "embedding_app",
             "title",
@@ -122,6 +126,8 @@ class PollCreateSerializer(serializers.ModelSerializer):
         model = Poll
         fields = [
             "poll_type",
+            "temporal_type",
+            "is_mutable",
             "parent_poll",
             "embedding_app",
             "title",
@@ -176,6 +182,7 @@ class VoteSerializer(serializers.ModelSerializer):
             "blockchain_tx",
             "is_verified",
             "verification_details",
+            "is_current",
             "created_at",
         ]
         read_only_fields = [
@@ -185,6 +192,7 @@ class VoteSerializer(serializers.ModelSerializer):
             "blockchain_tx",
             "is_verified",
             "verification_details",
+            "is_current",
             "created_at",
         ]
 
@@ -201,7 +209,7 @@ class VoteCreateSerializer(serializers.Serializer):
 
 
 class PollResultsSerializer(serializers.ModelSerializer):
-    """Serializer for poll results."""
+    """Serializer for poll results (dynamically computed)."""
 
     options = serializers.SerializerMethodField()
     total_votes = serializers.SerializerMethodField()
@@ -221,22 +229,29 @@ class PollResultsSerializer(serializers.ModelSerializer):
         ]
 
     def get_options(self, obj):
-        options = obj.options.all()
+        from django.db.models import Count, Q
+
+        options = obj.options.annotate(
+            current_vote_count=Count(
+                "vote_options",
+                filter=Q(vote_options__is_current=True),
+            )
+        )
         results = []
-        total = sum(opt.votes for opt in options)
+        total = sum(opt.current_vote_count for opt in options)
         for option in options:
-            percentage = (option.votes / total * 100) if total > 0 else 0
+            percentage = (option.current_vote_count / total * 100) if total > 0 else 0
             results.append(
                 {
                     "option": option.text,
-                    "vote_count": option.votes,
+                    "vote_count": option.current_vote_count,
                     "percentage": round(percentage, 2),
                 }
             )
         return results
 
     def get_total_votes(self, obj):
-        return sum(opt.votes for opt in obj.options.all())
+        return Vote.objects.filter(poll=obj, is_current=True).count()
 
 
 from django.utils.translation import gettext_lazy as _

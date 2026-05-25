@@ -31,10 +31,11 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 
-from apps.poller.models import Poll, PollOption, Vote
+from apps.poller.models import Poll, PollOption, TemporalPollType, Vote
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -245,14 +246,13 @@ def vote_api(request: HttpRequest, poll_id: int) -> HttpResponse:
                 # Get the user's vote - this should match the vote we just created
                 user_vote = None
                 if request.user.is_authenticated:
-                    try:
-                        user_vote = Vote.objects.get(poll=poll, user=request.user)
+                    user_vote = Vote.objects.filter(poll=poll, user=request.user, is_current=True).first()
+                    if user_vote:
                         logger.debug(
                             f"Found user vote: {user_vote.id} for option: {user_vote.option.text}"
                         )
-                    except Vote.DoesNotExist:
+                    else:
                         logger.debug("No existing vote found for user")
-                        pass
                 else:
                     logger.debug("User is not authenticated")
 
@@ -343,12 +343,31 @@ def cast_vote(request: HttpRequest, poll_id: int, data: Dict[str, Any]) -> JsonR
                 status=404,
             )
 
-        # Check if user has already voted
-        if Vote.objects.filter(poll=poll, user=user).exists():
+        # --- Temporal validation ---
+        if not poll.is_active_now:
+            if poll.starts_at and timezone.now() < poll.starts_at:
+                return JsonResponse(
+                    {"status": "error", "message": "Poll has not started yet."},
+                    status=400,
+                )
             return JsonResponse(
-                {"status": "error", "message": "You have already voted in this poll."},
+                {"status": "error", "message": "Poll has ended."},
                 status=400,
             )
+
+        # --- Idempotency / re-vote check ---
+        existing_vote = Vote.objects.filter(
+            poll=poll, user=user, is_current=True
+        ).first()
+        if existing_vote:
+            if poll.is_mutable:
+                existing_vote.is_current = False
+                existing_vote.save(update_fields=["is_current"])
+            else:
+                return JsonResponse(
+                    {"status": "error", "message": "You have already voted in this poll."},
+                    status=400,
+                )
 
         # Check scope/credential requirements
         if (
@@ -624,10 +643,7 @@ def get_poll_detail(request: HttpRequest, poll_id: int) -> HttpResponse:
     user_vote = None
 
     if request.user.is_authenticated:
-        try:
-            user_vote = Vote.objects.get(poll=poll, user=request.user)
-        except Vote.DoesNotExist:
-            pass
+        user_vote = Vote.objects.filter(poll=poll, user=request.user, is_current=True).first()
 
     return render(
         request,
@@ -717,7 +733,7 @@ from apps.core.models import ScopeType, Scope, CredentialIssuance
 from apps.core.utils import err, ok
 from apps.core.verification import verify_vote_signature
 
-from .models import Poll, PollOption, Vote
+from .models import Poll, PollOption, TemporalPollType, Vote
 from .serializers import (
     PollSerializer,
     PollCreateSerializer,
@@ -899,14 +915,26 @@ class CastVoteAPIView(APIView):
     """
     API endpoint for casting a vote (idempotent, headless).
 
-    POST /api/polls/{poll_id}/vote/
+    POST /api/polls/{poll_id}/cast/
 
     Accepts anonymous requests.  Authentication is replaced by
     cryptographic signature verification: the request must include a
     ``signature`` that proves control of ``voter_did``.
 
-    If a vote for this (poll, voter_did) already exists AND the signature
-    matches, returns duplicate-success (201) instead of failing.
+    Temporal rules
+    --------------
+    * TIMED poll — vote rejected if ``expires_at`` has passed.
+    * SCHEDULED poll — vote rejected before ``starts_at`` or after
+      ``expires_at``.
+    * ONGOING poll — no temporal bounds.
+
+    Mutability rules
+    ----------------
+    * ``poll.is_mutable == False`` (default for TIMED / SCHEDULED):
+      duplicate ``(poll, voter_did)`` is rejected.
+    * ``poll.is_mutable == True`` (expected for ONGOING):
+      a re-vote marks the previous record ``is_current=False`` and
+      ingests a fresh historical record.
     """
 
     authentication_classes: list = []
@@ -917,6 +945,37 @@ class CastVoteAPIView(APIView):
     ) -> bool:
         """Delegate to ``apps.core.verification.verify_vote_signature``."""
         return verify_vote_signature(voter_did, signature_hex, vote_envelope)
+
+    def _reject_if_not_active(self, poll):
+        """Return a v2 error Response if the poll is temporally unavailable, else None."""
+        if poll.temporal_type == TemporalPollType.ONGOING:
+            return None
+        now = timezone.now()
+        if poll.starts_at and now < poll.starts_at:
+            return Response(
+                err("Poll has not started yet"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if poll.ends_at and now > poll.ends_at:
+            return Response(
+                err("Poll has ended"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
+    def _handle_revote(self, poll, voter_did, option, signature):
+        """Process a re-vote on an ``is_mutable`` poll.
+
+        Flips the previous current vote to ``is_current=False`` and
+        creates a fresh historical record.
+        """
+        old_vote = Vote.objects.filter(
+            poll=poll, voter_did=voter_did, is_current=True
+        ).first()
+        if old_vote:
+            old_vote.is_current = False
+            old_vote.save(update_fields=["is_current"])
+        return None  # caller creates the new vote
 
     def post(self, request, poll_id):
         serializer = VoteCreateSerializer(data=request.data)
@@ -936,10 +995,10 @@ class CastVoteAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if poll.is_expired:
-            return Response(
-                err("Poll has ended"), status=status.HTTP_400_BAD_REQUEST
-            )
+        # --- Temporal validation ---
+        temporal_block = self._reject_if_not_active(poll)
+        if temporal_block:
+            return temporal_block
 
         voter_did = data.get("voter_did")
         signature = data.get("signature", "")
@@ -948,7 +1007,7 @@ class CastVoteAPIView(APIView):
             "poll_id": poll.id,
             "option_id": data.get("option_id"),
             "voter_did": voter_did,
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": timezone.now().isoformat(),
         }
 
         # --- Headless signature verification ---
@@ -958,22 +1017,27 @@ class CastVoteAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # --- Idempotency check ---
-        existing_vote = Vote.objects.filter(poll=poll, voter_did=voter_did).first()
+        # --- Idempotency / re-vote check ---
+        existing_vote = Vote.objects.filter(
+            poll=poll, voter_did=voter_did, is_current=True
+        ).first()
         if existing_vote:
-            if existing_vote.signature == signature:
+            if poll.is_mutable:
+                self._handle_revote(poll, voter_did, None, signature)
+            else:
+                if existing_vote.signature == signature:
+                    return Response(
+                        ok(details={
+                            "vote_id": existing_vote.id,
+                            "duplicate": True,
+                            "message": "Vote already recorded",
+                        }),
+                        status=status.HTTP_201_CREATED,
+                    )
                 return Response(
-                    ok(details={
-                        "vote_id": existing_vote.id,
-                        "duplicate": True,
-                        "message": "Vote already recorded",
-                    }),
-                    status=status.HTTP_201_CREATED,
+                    err("Already voted in this poll"),
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-            return Response(
-                err("Already voted in this poll"),
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         # Verify credential if required
         if poll.required_scope_type and poll.required_credential_type:
@@ -1024,7 +1088,7 @@ class CastVoteAPIView(APIView):
             "poll_id": poll.id,
             "option_id": option.id,
             "voter_did": voter_did,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": timezone.now().isoformat()
         }
         if not signature:
             signature = hashlib.sha256(json.dumps(sign_data, sort_keys=True).encode()).hexdigest()
@@ -1075,16 +1139,21 @@ class CheckVotingEligibilityAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if poll.is_expired:
+        if not poll.is_active_now:
+            if poll.starts_at and timezone.now() < poll.starts_at:
+                return Response(ok(details={
+                    "eligible": False, "reason": "Poll has not started yet",
+                }))
             return Response(ok(details={
                 "eligible": False, "reason": "Poll has ended",
             }))
 
-        # Check if already voted
-        if Vote.objects.filter(poll=poll, voter_did=voter_did).exists():
-            return Response(ok(details={
-                "eligible": False, "reason": "Already voted in this poll",
-            }))
+        # Mutable polls allow re-votes — skip the "already voted" gate
+        if not poll.is_mutable:
+            if Vote.objects.filter(poll=poll, voter_did=voter_did, is_current=True).exists():
+                return Response(ok(details={
+                    "eligible": False, "reason": "Already voted in this poll",
+                }))
 
         eligible = True
         reason = None
@@ -1450,10 +1519,7 @@ def poll_detail(request: HttpRequest, poll_id: int) -> HttpResponse:
     user_vote = None
 
     if request.user.is_authenticated:
-        try:
-            user_vote = Vote.objects.get(poll=poll, user=request.user)
-        except Vote.DoesNotExist:
-            pass
+        user_vote = Vote.objects.filter(poll=poll, user=request.user, is_current=True).first()
 
     return render(
         request,

@@ -109,12 +109,8 @@ def sync_poll_on_delete(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Vote)
 def sync_vote_on_save(sender, instance, created, **kwargs):
-    """Increment option counter and broadcast vote as kind:1111 Nostr event."""
+    """Broadcast vote as kind:1111 Nostr event."""
     if created:
-        option = instance.option
-        option.votes = models.F("votes") + 1
-        option.save(update_fields=["votes"])
-
         federated_data = FederatedData.objects.filter(
             data_type="poll",
             data_id=str(instance.poll.id),
@@ -123,8 +119,10 @@ def sync_vote_on_save(sender, instance, created, **kwargs):
         if federated_data:
             poll_data = federated_data.data
             for opt in poll_data["options"]:
-                if opt["text"] == option.text:
-                    opt["votes"] = option.votes
+                if opt["text"] == instance.option.text:
+                    opt["votes"] = Vote.objects.filter(
+                        option=instance.option, is_current=True
+                    ).count()
                     break
             federated_data.data = poll_data
             federated_data.version = models.F("version") + 1

@@ -21,6 +21,7 @@ including polls, poll options, votes, and geographical scopes.
 """
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -38,6 +39,14 @@ class PollType(models.TextChoices):
     ORGANIZATION = "organization", _("Organization")
 
 
+class TemporalPollType(models.TextChoices):
+    """Temporal behaviour classification for poll scheduling."""
+
+    TIMED = "timed", _("Timed")
+    SCHEDULED = "scheduled", _("Scheduled")
+    ONGOING = "ongoing", _("Ongoing")
+
+
 class Poll(models.Model):
     """
     Model representing a poll.
@@ -51,6 +60,18 @@ class Poll(models.Model):
         choices=PollType.choices,
         default=PollType.PUBLIC,
         help_text=_("Type of poll determining visibility and authorization rules."),
+    )
+
+    temporal_type = models.CharField(
+        max_length=20,
+        choices=TemporalPollType.choices,
+        default=TemporalPollType.TIMED,
+        help_text=_("Temporal schedule classification: timed, scheduled, or ongoing."),
+    )
+
+    is_mutable = models.BooleanField(
+        default=False,
+        help_text=_("Allow a DID to overwrite their previous vote checkpoint."),
     )
 
     # Family/organization hierarchy
@@ -195,6 +216,21 @@ class Poll(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def clean(self):
+        from django.utils import timezone as tz
+
+        if self.temporal_type in (TemporalPollType.TIMED, TemporalPollType.SCHEDULED):
+            if self.ends_at is None:
+                raise ValidationError(
+                    {"ends_at": "TIMED and SCHEDULED polls must have an end time."}
+                )
+
+        if self.temporal_type == TemporalPollType.SCHEDULED:
+            if self.starts_at is None:
+                raise ValidationError(
+                    {"starts_at": "SCHEDULED polls must have a start time."}
+                )
+
     class Meta:
         verbose_name = _("Poll")
         verbose_name_plural = _("Polls")
@@ -205,6 +241,8 @@ class Poll(models.Model):
     @property
     def is_expired(self):
         """Check if the poll has ended."""
+        if self.temporal_type == TemporalPollType.ONGOING:
+            return False
         from django.utils import timezone
 
         if self.ends_at:
@@ -214,6 +252,8 @@ class Poll(models.Model):
     @property
     def is_active_now(self):
         """Check if poll is currently active (within start/end times)."""
+        if self.temporal_type == TemporalPollType.ONGOING:
+            return self.is_active
         from django.utils import timezone
 
         now = timezone.now()
@@ -225,8 +265,8 @@ class Poll(models.Model):
 
     @property
     def total_votes(self):
-        """Get total vote count."""
-        return sum(option.votes for option in self.options.all())
+        """Get total vote count (dynamically computed)."""
+        return self.votes.filter(is_current=True).count()
 
     @property
     def funding_progress(self):
@@ -241,6 +281,11 @@ class PollOption(models.Model):
     Model representing an option in a poll.
 
     Each poll can have multiple options for users to choose from.
+
+    Note: ``votes`` is a **deprecated** denormalized counter.  Federated
+    out-of-order arrivals make it unreliable.  Use
+    ``Vote.objects.filter(option=option, is_current=True).count()`` or the
+    ``dynamic_vote_count`` property for accurate tallies.
     """
 
     poll = models.ForeignKey(
@@ -255,8 +300,13 @@ class PollOption(models.Model):
     )
     votes = models.PositiveIntegerField(
         default=0,
-        help_text=_("Number of votes this option has received."),
+        help_text=_("DEPRECATED — use dynamic_vote_count instead."),
     )
+
+    @property
+    def dynamic_vote_count(self):
+        """Accurate tally computed from active (is_current) votes."""
+        return Vote.objects.filter(option=self, is_current=True).count()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -357,12 +407,21 @@ class Vote(models.Model):
         help_text=_("Details about vote verification."),
     )
 
+    # Mutable checkpoint support (ONGOING / is_mutable polls)
+    is_current = models.BooleanField(
+        default=True,
+        help_text=_(
+            "Whether this vote is the voter's active checkpoint. "
+            "When a DID re-votes on a mutable poll the previous record "
+            "is flipped to False and a new record is ingested."
+        ),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = _("Vote")
         verbose_name_plural = _("Votes")
-        unique_together = ("poll", "voter_did")
 
     def __str__(self):
         identity = self.user.username if self.user else self.voter_did
