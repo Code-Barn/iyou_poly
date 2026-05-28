@@ -129,6 +129,10 @@ class Poll(models.Model):
     )
 
     # Trust requirements
+    min_fidelity_required = models.PositiveSmallIntegerField(
+        default=1,
+        help_text=_("Minimum trust fidelity required (1=Social/Peer, 2=Institutional, 3=Hardware/Security)."),
+    )
     min_issuer_trust_score = models.FloatField(
         default=0.0,
         help_text=_("Minimum trust score for credential issuers (0.0 - 1.0)."),
@@ -470,6 +474,49 @@ class Vote(models.Model):
         return f"{identity} cast vote for '{self.option.text}' in [{self.poll.title}]"
 
 
+class RevocationAttestation(models.Model):
+    """A cryptographic attestation that revokes a previously-issued credential.
+
+    When an issuer publishes a ``RevocationAttestation`` it signals that a
+    credential they previously issued (identified by *original_credential_id*)
+    is no longer valid, regardless of its original ``expirationDate``.
+    """
+
+    issuer_did = models.CharField(
+        max_length=255,
+        help_text="DID of the issuer who originally issued the credential.",
+    )
+    subject_did = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="DID of the credential subject (voter) whose credential is revoked.",
+    )
+    original_credential_id = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="Optional identifier of the specific credential being revoked.",
+    )
+    signature = models.TextField(
+        help_text="Base58btc-encoded Ed25519 signature proving the issuer authorised this revocation.",
+    )
+    timestamp = models.DateTimeField(
+        help_text="When the revocation was issued (ISO-8601).",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Revocation Attestation")
+        verbose_name_plural = _("Revocation Attestations")
+        indexes = [
+            models.Index(fields=["issuer_did", "subject_did"]),
+        ]
+
+    def __str__(self):
+        return f"Revocation by {self.issuer_did} for {self.subject_did}"
+
+
 class FederatedPoll(FederatedData):
     """
     Model representing a poll that is synchronized across federated nodes.
@@ -490,3 +537,39 @@ class FederatedPoll(FederatedData):
         if not self.data_type:
             self.data_type = "poll"
         super().save(*args, **kwargs)
+
+
+class TrustedIssuer(models.Model):
+    """Whitelisted issuer for a specific poll's credential gate.
+
+    When a ``Poll`` has one or more ``TrustedIssuer`` records, only
+    credentials whose ``issuer`` DID appears in this list are accepted.
+    If the list is empty every issuer is allowed (legacy open-trust
+    behaviour).
+    """
+
+    poll = models.ForeignKey(
+        Poll,
+        on_delete=models.CASCADE,
+        related_name="trusted_issuers",
+        help_text="The poll this whitelist entry belongs to.",
+    )
+    issuer_did = models.CharField(
+        max_length=255,
+        help_text="DID of the issuer authorised to issue credentials for this poll.",
+    )
+    is_mandatory = models.BooleanField(
+        default=False,
+        help_text=(
+            "If True, this issuer is treated as a constitutional registrar "
+            "for this poll and bypasses the per-poll whitelist."
+        ),
+    )
+
+    class Meta:
+        verbose_name = _("Trusted Issuer")
+        verbose_name_plural = _("Trusted Issuers")
+        unique_together = ("poll", "issuer_did")
+
+    def __str__(self):
+        return f"{self.issuer_did} → {self.poll.title}"

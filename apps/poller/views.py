@@ -731,7 +731,12 @@ from rest_framework.views import APIView
 
 from apps.core.models import ScopeType, Scope, CredentialIssuance
 from apps.core.utils import err, ok
-from apps.core.verification import verify_vote_signature
+from apps.core.verification import (
+    verify_attestation,
+    verify_credential_presentation,
+    verify_revocation,
+    verify_vote_signature,
+)
 
 from .models import Poll, PollOption, TemporalPollType, Vote
 from .serializers import (
@@ -910,6 +915,92 @@ class VoteViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+# ---------------------------------------------------------------------------
+# Challenge management (distributed cache backend)
+# ---------------------------------------------------------------------------
+
+import secrets
+
+try:
+    from django.core.cache import cache as _cache
+except ImportError:
+    _cache = None
+
+
+_CHALLENGE_TTL = 300  # 5 minutes
+
+
+def issue_challenge(voter_did: str) -> str:
+    """Generate a cryptographic nonce and store it in the shared cache."""
+    challenge = secrets.token_hex(32)
+    _cache.set(f"vp_challenge:{voter_did}", challenge, timeout=_CHALLENGE_TTL)
+    return challenge
+
+
+def consume_challenge(voter_did: str) -> str | None:
+    """Atomically fetch and delete a challenge for *voter_did*.
+
+    Returns ``None`` if no challenge exists or it has expired.
+    """
+    key = f"vp_challenge:{voter_did}"
+    challenge = _cache.get(key)
+    if challenge is None:
+        return None
+    _cache.delete(key)
+    return challenge
+
+
+# ---------------------------------------------------------------------------
+# Credential-request endpoint (VP handshake)
+# ---------------------------------------------------------------------------
+
+
+class IssueCredentialChallengeView(APIView):
+    """Issue a cryptographic challenge for Verifiable Presentation handshake.
+
+    POST /api/polls/{poll_id}/credential-request/
+
+    Returns a nonce that the client must embed in the VP's ``proof.challenge``
+    field to prove freshness and prevent replay attacks.
+    """
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def post(self, request, poll_id):
+        voter_did = request.data.get("voter_did")
+        if not voter_did:
+            return Response(
+                err("voter_did is required"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            poll = Poll.objects.get(id=poll_id, is_active=True)
+        except Poll.DoesNotExist:
+            return Response(
+                err("Poll not found or inactive"),
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not poll.required_credential_type:
+            return Response(
+                err("Poll does not require a credential"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        challenge = issue_challenge(voter_did)
+        return Response(
+            ok(details={
+                "challenge": challenge,
+                "poll_id": poll.id,
+                "required_credential_type": poll.required_credential_type,
+                "min_fidelity_required": poll.min_fidelity_required,
+            }),
+            status=status.HTTP_201_CREATED,
+        )
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class CastVoteAPIView(APIView):
     """
@@ -1083,30 +1174,94 @@ class CastVoteAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # --- Credential gate ---
+        # --- Credential gate (cryptographic attestation verification) ---
         credential_data_package = None
         credential_gate = poll.required_credential_type
         if credential_gate:
+            credential_presentation = data.get("credential_presentation")
             credential = data.get("credential")
-            if not credential:
+
+            if not credential_presentation and not credential:
                 return Response(
                     err("Missing or invalid identity credential required for this poll type"),
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            cred_type = credential.get("type", "")
-            if isinstance(cred_type, list):
-                cred_type = cred_type[0] if cred_type else ""
+            if credential_presentation:
+                # --- Verifiable Presentation mode ---
+                challenge = consume_challenge(voter_did)
+                if not challenge:
+                    return Response(
+                        err("Challenge expired or not found — re-request a credential challenge"),
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
 
-            if cred_type != credential_gate:
+                is_valid, fidelity_score, inner_vc = verify_credential_presentation(
+                    credential_presentation, credential_gate, challenge,
+                    required_fidelity=poll.min_fidelity_required,
+                )
+                if not is_valid:
+                    if fidelity_score < poll.min_fidelity_required:
+                        return Response(
+                            err("Insufficient trust fidelity for this poll"),
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    return Response(
+                        err("Invalid Credential Attestation"),
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                # Strict identity invariant: the VP holder DID must match the
+                # authenticated OIDC session identifier.
+                vp_holder = credential_presentation.get("holder", "")
+                if request.user.is_authenticated and request.user.username != vp_holder:
+                    return Response(
+                        err("Credential holder does not match authenticated user"),
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                credential = inner_vc  # unpacked VC for downstream checks
+
+            else:
+                # --- Legacy bare-VC mode ---
+                is_valid, fidelity_score = verify_attestation(
+                    credential, credential_gate, voter_did,
+                    required_fidelity=poll.min_fidelity_required,
+                )
+                if not is_valid:
+                    if fidelity_score < poll.min_fidelity_required:
+                        return Response(
+                            err("Insufficient trust fidelity for this poll"),
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    return Response(
+                        err("Invalid Credential Attestation"),
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+            issuer_did = credential.get("issuer", "")
+
+            from django.conf import settings
+
+            is_mandatory = issuer_did in settings.MANDATORY_ISSUER_DIDS
+
+            if not is_mandatory:
+                trusted = poll.trusted_issuers.values_list("issuer_did", flat=True)
+                if trusted and issuer_did not in set(trusted):
+                    return Response(
+                        err("Issuer not authorized for this poll"),
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+            if verify_revocation(voter_did, issuer_did):
                 return Response(
-                    err("Missing or invalid identity credential required for this poll type"),
-                    status=status.HTTP_400_BAD_REQUEST,
+                    err("Credential Revoked"),
+                    status=status.HTTP_403_FORBIDDEN,
                 )
 
             credential_data_package = {
-                "type": cred_type,
-                "issuer": credential.get("issuer", ""),
+                "type": credential_gate,
+                "issuer": issuer_did,
                 "credentialSubject": credential.get("credentialSubject", {}),
             }
 

@@ -238,6 +238,11 @@ OIDC_STORE_ID_TOKEN = True
 # REQUIRE_TRUSTED_ISSUERS = False  # Set to True to enable trusted issuer list
 # TRUSTED_ISSUERS = []  # List of trusted issuer DIDs when REQUIRE_TRUSTED_ISSUERS is True
 
+# Mandatory issuers that bypass per-poll issuer whitelists.
+# Credentials signed by these issuers are always accepted for any gated
+# poll, regardless of the poll's TrustedIssuer whitelist.
+MANDATORY_ISSUER_DIDS: list[str] = []
+
 # Open trust model by default (allow any federated server)
 # This can be changed to a more restrictive model in production
 

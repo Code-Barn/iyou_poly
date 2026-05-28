@@ -13,14 +13,27 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import json
 from unittest.mock import patch
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+)
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.poller.models import Poll, PollOption, PollType, TemporalPollType, Vote
+from apps.core.verification import _b58encode
+from apps.poller.models import (
+    Poll,
+    PollOption,
+    PollType,
+    TemporalPollType,
+    TrustedIssuer,
+    Vote,
+)
 from apps.poller.serializers import PollResultsSerializer
 
 User = get_user_model()
@@ -663,18 +676,166 @@ class CredentialGateTests(TestCase):
     def test_credential_gate_stores_valid_credential(self, _mock_sig):
         self.poll.required_credential_type = "municipal_voter"
         self.poll.save(update_fields=["required_credential_type"])
+
+        private_key = Ed25519PrivateKey.generate()
+        pubkey_bytes = private_key.public_key().public_bytes_raw()
+        multicodec = b"\xed\x01" + pubkey_bytes
+        issuer_did = f"did:key:z{_b58encode(multicodec)}"
+
+        vc_body = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["municipal_voter"],
+            "issuer": issuer_did,
+            "issuanceDate": "2026-01-01T00:00:00Z",
+            "credentialSubject": {"id": "did:key:z6Mgated"},
+        }
+        canonical = json.dumps(vc_body, sort_keys=False, separators=(",", ":")).encode("utf-8")
+        sig_bytes = private_key.sign(canonical)
+        sig_b58 = _b58encode(sig_bytes)
+        vc_body["proof"] = {
+            "type": "Ed25519Signature2018",
+            "verificationMethod": f"{issuer_did}#keys-1",
+            "signatureValue": sig_b58,
+        }
+
         response = self._post_vote({
             "poll_id": self.poll.id,
             "option_id": self.option.id,
-            "credential": {
-                "type": ["municipal_voter"],
-                "issuer": "did:key:z6Missuer",
-                "credentialSubject": {"id": "did:key:z6Mgated"},
-            },
+            "credential": vc_body,
         })
         self.assertEqual(response.status_code, 201)
         vote = Vote.objects.filter(poll=self.poll).first()
         self.assertIsNotNone(vote)
         self.assertIsNotNone(vote.credential_data)
         self.assertEqual(vote.credential_data["type"], "municipal_voter")
-        self.assertEqual(vote.credential_data["issuer"], "did:key:z6Missuer")
+        self.assertEqual(vote.credential_data["issuer"], issuer_did)
+
+    # --- Test 4: credential from a non-whitelisted issuer is rejected ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_credential_from_non_whitelisted_issuer_rejected(self, _mock_sig):
+        self.poll.required_credential_type = "municipal_voter"
+        self.poll.save(update_fields=["required_credential_type"])
+
+        private_key = Ed25519PrivateKey.generate()
+        pubkey_bytes = private_key.public_key().public_bytes_raw()
+        multicodec = b"\xed\x01" + pubkey_bytes
+        issuer_did = f"did:key:z{_b58encode(multicodec)}"
+
+        vc_body = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["municipal_voter"],
+            "issuer": issuer_did,
+            "issuanceDate": "2026-01-01T00:00:00Z",
+            "credentialSubject": {"id": "did:key:z6Mgated"},
+        }
+        canonical = json.dumps(vc_body, sort_keys=False, separators=(",", ":")).encode("utf-8")
+        sig_bytes = private_key.sign(canonical)
+        sig_b58 = _b58encode(sig_bytes)
+        vc_body["proof"] = {
+            "type": "Ed25519Signature2018",
+            "verificationMethod": f"{issuer_did}#keys-1",
+            "signatureValue": sig_b58,
+        }
+
+        # Whitelist a *different* issuer so this one is unauthorised
+        TrustedIssuer.objects.create(
+            poll=self.poll,
+            issuer_did="did:key:z6MwhitelistedOnly",
+        )
+
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": self.option.id,
+            "credential": vc_body,
+        })
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertFalse(data["valid"])
+        self.assertIn("Issuer not authorized", data["error"])
+
+    # --- Test 5: whitelisted issuer is accepted ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_whitelisted_issuer_accepted(self, _mock_sig):
+        self.poll.required_credential_type = "municipal_voter"
+        self.poll.save(update_fields=["required_credential_type"])
+
+        private_key = Ed25519PrivateKey.generate()
+        pubkey_bytes = private_key.public_key().public_bytes_raw()
+        multicodec = b"\xed\x01" + pubkey_bytes
+        issuer_did = f"did:key:z{_b58encode(multicodec)}"
+
+        # Add issuer to the whitelist
+        TrustedIssuer.objects.create(poll=self.poll, issuer_did=issuer_did)
+
+        vc_body = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["municipal_voter"],
+            "issuer": issuer_did,
+            "issuanceDate": "2026-01-01T00:00:00Z",
+            "credentialSubject": {"id": "did:key:z6Mgated"},
+        }
+        canonical = json.dumps(vc_body, sort_keys=False, separators=(",", ":")).encode("utf-8")
+        sig_bytes = private_key.sign(canonical)
+        sig_b58 = _b58encode(sig_bytes)
+        vc_body["proof"] = {
+            "type": "Ed25519Signature2018",
+            "verificationMethod": f"{issuer_did}#keys-1",
+            "signatureValue": sig_b58,
+        }
+
+        response = self._post_vote({
+            "poll_id": self.poll.id,
+            "option_id": self.option.id,
+            "credential": vc_body,
+        })
+        self.assertEqual(response.status_code, 201)
+        vote = Vote.objects.filter(poll=self.poll).first()
+        self.assertEqual(vote.credential_data["issuer"], issuer_did)
+
+    # --- Test 6: mandatory issuer bypasses whitelist ---
+
+    @patch("apps.poller.views.verify_vote_signature", return_value=True)
+    def test_mandatory_issuer_accepted_even_if_not_in_whitelist(self, _mock_sig):
+        self.poll.required_credential_type = "municipal_voter"
+        self.poll.save(update_fields=["required_credential_type"])
+
+        # Build a real keypair — the registrar's DID is derived from its key
+        registrar_key = Ed25519PrivateKey.generate()
+        registrar_pubkey_bytes = registrar_key.public_key().public_bytes_raw()
+        registrar_multicodec = b"\xed\x01" + registrar_pubkey_bytes
+        registrar_did = f"did:key:z{_b58encode(registrar_multicodec)}"
+
+        # Whitelist only Bob's server (not the registrar)
+        TrustedIssuer.objects.create(
+            poll=self.poll,
+            issuer_did="did:key:z6MBobsServer",
+        )
+
+        # Sign a credential as the registrar (mandatory issuer)
+        vc_body = {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["municipal_voter"],
+            "issuer": registrar_did,
+            "issuanceDate": "2026-01-01T00:00:00Z",
+            "credentialSubject": {"id": "did:key:z6Mgated"},
+        }
+        canonical = json.dumps(vc_body, sort_keys=False, separators=(",", ":")).encode("utf-8")
+        sig_bytes = registrar_key.sign(canonical)
+        sig_b58 = _b58encode(sig_bytes)
+        vc_body["proof"] = {
+            "type": "Ed25519Signature2018",
+            "verificationMethod": f"{registrar_did}#keys-1",
+            "signatureValue": sig_b58,
+        }
+
+        with self.settings(MANDATORY_ISSUER_DIDS=[registrar_did]):
+            response = self._post_vote({
+                "poll_id": self.poll.id,
+                "option_id": self.option.id,
+                "credential": vc_body,
+            })
+        self.assertEqual(response.status_code, 201)
+        vote = Vote.objects.filter(poll=self.poll).first()
+        self.assertEqual(vote.credential_data["issuer"], registrar_did)

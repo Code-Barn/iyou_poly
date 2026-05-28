@@ -202,6 +202,7 @@ class VoteCreateSerializer(serializers.Serializer):
     voter_did = serializers.CharField(max_length=255)
     signature = serializers.CharField(required=False, allow_blank=True)
     credential = serializers.JSONField(required=False)
+    credential_presentation = serializers.JSONField(required=False)
     credential_cid = serializers.CharField(required=False, allow_blank=True)
     write_in_text = serializers.CharField(
         required=False, allow_blank=True, default=""

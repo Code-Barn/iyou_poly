@@ -28,6 +28,7 @@ from apps.poller.views import (
     CastVoteAPIView,
     CheckVotingEligibilityAPIView,
     CreatePollView,
+    IssueCredentialChallengeView,
     PollViewSet,
     VoteViewSet,
     get_votes,
@@ -75,6 +76,12 @@ urlpatterns = router.urls + [
         "api/polls/<int:poll_id>/eligibility/",
         CheckVotingEligibilityAPIView.as_view(),
         name="check_eligibility_api",
+    ),
+    # VP handshake endpoint
+    path(
+        "api/polls/<int:poll_id>/credential-request/",
+        IssueCredentialChallengeView.as_view(),
+        name="credential_request_api",
     ),
     # Embeddable Poly API
     path(
