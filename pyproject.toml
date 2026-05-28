@@ -12,6 +12,7 @@ dependencies = [
     "mozilla-django-oidc>=5.0.2",
     "psycopg2-binary>=2.9.10",
     "coincurve>=1.0.0",
+    "django-cors-headers>=4.7.0",
     "websockets>=15.0",
     "requests>=2.32.0",
 ]

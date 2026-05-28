@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "rest_framework",
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
@@ -110,6 +111,7 @@ if DEBUG:
     INSTALLED_APPS += ["debug_toolbar"]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -253,3 +255,9 @@ NOSTR_PRIVATE_KEY = env.str(
 )
 NOSTR_RELAYS = env.list("NOSTR_RELAYS")
 NOSTR_ENABLED = bool(NOSTR_PRIVATE_KEY)
+
+# Cross-Origin Resource Sharing — authorize iyou_wun satellite (port 8001)
+CORS_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:8001",
+    "http://localhost:8001",
+]

@@ -6,6 +6,7 @@ existing Poll / Vote creation pipeline with upsert semantics for idempotent
 relay firehose processing.
 """
 
+import binascii
 import hashlib
 import json
 import logging
@@ -15,6 +16,8 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 import coincurve
 
@@ -45,10 +48,15 @@ def _get_nostr_system_user() -> User:
 
 
 def verify_nostr_event(event: dict[str, Any]) -> bool:
-    """Verify NIP-01 Schnorr/BIP-340 signature on a Nostr event envelope.
+    """Verify a Nostr event envelope, trying NIP-01 Schnorr then Ed25519.
 
-    Re-computes the SHA-256 event ID from the canonical serialisation and
-    validates the 64-byte ``sig`` against the x-only ``pubkey``.
+    Schnorr (BIP-340) verification re-computes the SHA-256 event ID from the
+    canonical serialisation and validates the 64-byte ``sig`` against the
+    x-only ``pubkey``.
+
+    If Schnorr fails or raises, falls back to Ed25519 verification on the same
+    canonical serialisation bytes — this accommodates mesh signatures produced
+    by the enclave's native Ed25519 platform.
     """
     try:
         serialized = json.dumps(
@@ -68,12 +76,39 @@ def verify_nostr_event(event: dict[str, Any]) -> bool:
             return False
 
         pubkey = coincurve.PublicKeyXOnly(bytes.fromhex(event["pubkey"]))
-        return pubkey.verify(
+        if pubkey.verify(
             bytes.fromhex(event["sig"]),
             bytes.fromhex(computed_id),
-        )
+        ):
+            return True
     except Exception as exc:
-        logger.warning("Nostr signature verification failed: %s", exc)
+        logger.debug("Nostr Schnorr verification failed, trying Ed25519 fallback: %s", exc)
+
+    # Fallback — Ed25519 (mesh signatures)
+    try:
+        pubkey_bytes = binascii.unhexlify(event["pubkey"])
+        sig_bytes = binascii.unhexlify(event["sig"])
+
+        serialized = json.dumps(
+            [
+                0,
+                event["pubkey"],
+                event["created_at"],
+                event["kind"],
+                event["tags"],
+                event["content"],
+            ],
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        public_key = ed25519.Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+        serialized_bytes = serialized.encode()
+        logger.debug("Ed25519 fallback — raw sig hex: %s", event.get("sig", ""))
+        logger.debug("Ed25519 fallback — serialized message UTF-8: %s", serialized_bytes.decode("utf-8"))
+        public_key.verify(sig_bytes, serialized_bytes)
+        return True
+    except Exception as exc:
+        logger.debug("Ed25519 fallback validation failed: %s", exc)
         return False
 
 
