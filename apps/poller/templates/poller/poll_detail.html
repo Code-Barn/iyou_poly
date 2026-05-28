@@ -52,9 +52,32 @@
             {% include "poller/partials/vote_combined.html" %}
         </div>
 
-        <!-- Comments Section (placeholder — Nostr relay integration incoming) -->
+        <!-- Nostr Sync Section -->
         <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Discussion</h3>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Nostr Sync</h3>
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    Paste a full Nostr event JSON (kind:30023 or kind:1112) to ingest it directly.
+                </p>
+                <form id="nostr-sync-form" onsubmit="return nostrSync(event)">
+                    {% csrf_token %}
+                    <textarea
+                        id="nostr-event-input"
+                        rows="4"
+                        class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md py-2 px-3 text-xs font-mono focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        placeholder='{"id":"...","pubkey":"...","created_at":...,"kind":30023,"tags":[],"content":"{...}","sig":"..."}'
+                    ></textarea>
+                    <div class="mt-2 flex items-center gap-3">
+                        <button
+                            type="submit"
+                            class="bg-[color:var(--primary-color)] text-white px-4 py-2 rounded-md text-sm hover:bg-[color:var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[color:var(--primary-focus)]"
+                        >
+                            Ingest Event
+                        </button>
+                        <span id="nostr-sync-result" class="text-sm"></span>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 {% endblock %}
@@ -112,6 +135,39 @@
                 }
             }
         });
+
+        // Nostr sync: POST full event JSON to the ingestion webhook
+        async function nostrSync(event) {
+            event.preventDefault();
+            const input = document.getElementById('nostr-event-input');
+            const result = document.getElementById('nostr-sync-result');
+            const raw = input.value.trim();
+            if (!raw) { result.textContent = 'Please paste a Nostr event JSON.'; result.className = 'text-sm text-red-500'; return false; }
+            let payload;
+            try { payload = JSON.parse(raw); } catch(e) { result.textContent = 'Invalid JSON.'; result.className = 'text-sm text-red-500'; return false; }
+            result.textContent = 'Ingesting...'; result.className = 'text-sm text-blue-500';
+            try {
+                const resp = await fetch('/api/nostr/ingest/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.valid) {
+                    const d = data.details || {};
+                    result.textContent = d.poll_id ? 'Poll #' + d.poll_id + ' ingested.' : 'Vote #' + d.vote_id + ' ingested.';
+                    result.className = 'text-sm text-green-500';
+                    if (d.poll_id) { setTimeout(function() { location.reload(); }, 1500); }
+                } else {
+                    result.textContent = 'Error: ' + (data.error || 'unknown');
+                    result.className = 'text-sm text-red-500';
+                }
+            } catch(e) {
+                result.textContent = 'Network error.';
+                result.className = 'text-sm text-red-500';
+            }
+            return false;
+        }
 
         // Theme toggle setup
         function setupThemeToggle() {

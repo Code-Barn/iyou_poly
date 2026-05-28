@@ -29,6 +29,7 @@ from apps.poller.views import (
     CheckVotingEligibilityAPIView,
     CreatePollView,
     IssueCredentialChallengeView,
+    NostrIngestWebhook,
     PollViewSet,
     VoteViewSet,
     get_votes,
@@ -93,6 +94,12 @@ urlpatterns = router.urls + [
         "api/embed/polls/<int:poll_id>/",
         EmbeddablePollWidget.as_view(),
         name="embed_poll_detail",
+    ),
+    # Nostr ingestion webhook
+    path(
+        "api/nostr/ingest/",
+        NostrIngestWebhook.as_view(),
+        name="nostr_ingest",
     ),
     # Template Views
     path(

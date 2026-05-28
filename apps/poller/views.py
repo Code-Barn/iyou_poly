@@ -746,6 +746,7 @@ from .serializers import (
     VoteSerializer,
     VoteCreateSerializer,
 )
+from .nostr_ingest import ingest_poll_event, ingest_vote_event
 
 
 class PollViewSet(viewsets.ModelViewSet):
@@ -1039,17 +1040,17 @@ class CastVoteAPIView(APIView):
 
     def _reject_if_not_active(self, poll):
         """Return a v2 error Response if the poll is temporally unavailable, else None."""
-        if poll.temporal_type == TemporalPollType.ONGOING:
+        if poll.is_ongoing:
             return None
         now = timezone.now()
         if poll.starts_at and now < poll.starts_at:
             return Response(
-                err("Poll has not started yet"),
+                err("Vote rejected: Poll schedule has not initialized yet."),
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if poll.ends_at and now > poll.ends_at:
             return Response(
-                err("Poll has ended"),
+                err("Vote rejected: Cryptographic ledger state is closed/locked."),
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return None
@@ -1709,3 +1710,74 @@ def poll_detail(request: HttpRequest, poll_id: int) -> HttpResponse:
             "user_vote": user_vote,
         },
     )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class NostrIngestWebhook(APIView):
+    """
+    Accept raw Nostr event envelopes and route them to the ingestion pipeline.
+
+    POST /api/nostr/ingest/
+
+    Expects a JSON body containing a complete Nostr event according to NIP-01:
+    ``{"id", "pubkey", "created_at", "kind", "tags", "content", "sig"}``.
+
+    Returns a v2 envelope with the ingested record details or an error.
+    """
+
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def post(self, request):
+        try:
+            body = json.loads(request.body) if isinstance(request.body, bytes) else request.data
+        except (json.JSONDecodeError, AttributeError):
+            return Response(
+                err("Invalid JSON body"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(body, dict) or "kind" not in body:
+            return Response(
+                err("Missing 'kind' field — not a valid Nostr event"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        kind = body.get("kind")
+
+        if kind == 30023:
+            poll = ingest_poll_event(body)
+            if poll is None:
+                return Response(
+                    err("Poll ingestion failed — invalid signature or malformed event"),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                ok(details={
+                    "poll_id": poll.id,
+                    "nostr_event_id": poll.nostr_event_id,
+                    "title": poll.title,
+                }),
+                status=status.HTTP_201_CREATED,
+            )
+
+        if kind in (1111, 1112):
+            vote = ingest_vote_event(body)
+            if vote is None:
+                return Response(
+                    err("Vote ingestion failed — invalid signature or malformed event"),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                ok(details={
+                    "vote_id": vote.id,
+                    "poll_id": vote.poll_id,
+                    "nostr_event_id": vote.nostr_event_id,
+                }),
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            err(f"Unsupported Nostr event kind: {kind}"),
+            status=status.HTTP_400_BAD_REQUEST,
+        )

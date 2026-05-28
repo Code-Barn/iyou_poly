@@ -48,6 +48,9 @@ class PollSerializer(serializers.ModelSerializer):
     total_votes = serializers.IntegerField(read_only=True)
     is_expired = serializers.BooleanField(read_only=True)
     is_active_now = serializers.BooleanField(read_only=True)
+    is_ongoing = serializers.BooleanField(read_only=True)
+    starts_at_unix = serializers.IntegerField(read_only=True, allow_null=True)
+    ends_at_unix = serializers.IntegerField(read_only=True, allow_null=True)
     funding_progress = serializers.FloatField(read_only=True)
 
     class Meta:
@@ -70,7 +73,9 @@ class PollSerializer(serializers.ModelSerializer):
             "min_issuer_trust_score",
             "require_multiple_issuers",
             "starts_at",
+            "starts_at_unix",
             "ends_at",
+            "ends_at_unix",
             "is_proposal",
             "funding_goal",
             "funding_current",
@@ -84,6 +89,7 @@ class PollSerializer(serializers.ModelSerializer):
             "total_votes",
             "is_active",
             "is_active_now",
+            "is_ongoing",
             "is_expired",
             "created_at",
             "updated_at",
@@ -139,6 +145,17 @@ class PollCreateSerializer(serializers.ModelSerializer):
             "funding_deadline",
             "options",
         ]
+
+    def to_internal_value(self, data):
+        from datetime import datetime
+        from django.utils import timezone
+
+        for field in ("starts_at", "ends_at"):
+            value = data.get(field)
+            if value is not None and isinstance(value, int):
+                data = data.copy()
+                data[field] = datetime.fromtimestamp(value, tz=timezone.utc)
+        return super().to_internal_value(data)
 
     def create(self, validated_data):
         options_texts = validated_data.pop("options", [])

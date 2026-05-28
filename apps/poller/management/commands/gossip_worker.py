@@ -1,11 +1,11 @@
 import asyncio
-import json
 import logging
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from apps.poller import nostr
+from apps.poller.nostr_ingest import ingest_poll_event, ingest_vote_event
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +23,13 @@ class Command(BaseCommand):
 
         relays = settings.NOSTR_RELAYS
         self.stdout.write(f"[gossip_worker] subscribing to {len(relays)} relay(s): {relays}")
-        self.stdout.write("[gossip_worker] listening for kind:30023 (poll) and kind:1111 (vote) events")
+        self.stdout.write("[gossip_worker] listening for kind:30023 (poll) and kind:1111/1112 (vote) events")
 
         async def _run():
             tasks = [
                 nostr.subscribe_loop(
                     relay,
-                    kinds=[30023, 1111],
+                    kinds=[30023, 1111, 1112],
                     on_event=self._handle_event,
                     sub_id=f"iyou_poly_{relay.replace('://', '_').replace('/', '_')}",
                 )
@@ -41,23 +41,20 @@ class Command(BaseCommand):
 
     def _handle_event(self, event: dict):
         kind = event.get("kind")
-        content = event.get("content", "")
-        tags = event.get("tags", [])
+        event_id = event.get("id", "")[:16]
 
         if kind == 30023:
-            self.stdout.write(f"[gossip_worker] received poll event: {event.get('id', '')[:16]}...")
-            # Future: upsert poll from event data
-            try:
-                data = json.loads(content)
-                self.stdout.write(f"  poll: {data.get('title', 'untitled')}")
-            except json.JSONDecodeError:
-                pass
+            self.stdout.write(f"[gossip_worker] received poll event: {event_id}...")
+            poll = ingest_poll_event(event)
+            if poll:
+                self.stdout.write(f"  → poll #{poll.id}: {poll.title}")
+            else:
+                self.stdout.write(f"  → skipped (invalid/duplicate)")
 
-        elif kind == 1111:
-            self.stdout.write(f"[gossip_worker] received vote event: {event.get('id', '')[:16]}...")
-            # Future: idempotent vote ingestion from event data
-            try:
-                data = json.loads(content)
-                self.stdout.write(f"  vote: poll={data.get('poll_id')}, voter={data.get('voter_did', '')[:16]}...")
-            except json.JSONDecodeError:
-                pass
+        elif kind in (1111, 1112):
+            self.stdout.write(f"[gossip_worker] received vote event: {event_id}...")
+            vote = ingest_vote_event(event)
+            if vote:
+                self.stdout.write(f"  → vote #{vote.id} for poll #{vote.poll_id}")
+            else:
+                self.stdout.write(f"  → skipped (invalid/duplicate)")

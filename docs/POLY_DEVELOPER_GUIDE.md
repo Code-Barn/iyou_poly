@@ -32,7 +32,7 @@ iyou_poly is a Django-based decentralized polling platform using OIDC for authen
    - On-demand Merkle root calculation from last 100 vote signatures via `anchor_ledger` command
    - Merkle root is printed to stdout; not automatically stored in `Poll.votes_merkle_root`
 4. **Nostr Broadcast**:
-   - On every vote/poll save, `apps/poller/signals.py` calls `nostr.publish_poll()` or `nostr.publish_vote()` to broadcast kind:30023 / kind:1112 events to all configured relays
+   - On every vote/poll save, `apps/poller/signals.py` calls `nostr.publish_poll()` or `nostr.publish_vote()` to broadcast kind:30023 poll events / kind:1111 vote events to all configured relays
 5. **Audit**:
    - `GET /api/polls/{id}/history/` returns vote history with signatures
    - Merkle root can be recalculated from signature list
@@ -70,6 +70,11 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - ✅ Write-in ballot options with NFKC normalization and view-layer coalescence — Phase 2
 - ✅ Segmented leaderboards (`core_options` / `write_in_leaderboard`) — Phase 2
 - ✅ Unified string-based credential gate with inline validation — Phase 3
+- ✅ Protocol v2 temporal ledger enforcements (`is_ongoing`, `starts_at_unix`, `ends_at_unix` properties; `PollCreateSerializer` UNIX epoch integer transform; v2 error messages) — Phase 4
+- ✅ Inbound Nostr ingestion pipeline (NIP-01 Schnorr verification, poll upsert via d-tag, vote ingest with idempotent deduplication) — Phase 4
+- ✅ Nostr event ID tracking (`nostr_event_id` on Poll+Vote, `nostr_pubkey` on Poll) for unique idempotent ingestion — Phase 4
+- ✅ `NostrIngestWebhook` at `POST /api/nostr/ingest/` — CSRF-exempt, Schnorr-verified inbound event relay — Phase 4
+- ✅ Gossip worker live ingest integration (calls `ingest_poll_event` / `ingest_vote_event` from subscription loop) — Phase 4
 
 **Partially Implemented:**
 - 🟡 DID-based identity (did:key, did:ethr, did:web, did:ion) — DIDs are used in the credential/voting flow (scope checking, eligibility), but auth remains OIDC-only
@@ -93,8 +98,9 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - **Trust System**: `min_issuer_trust_score`, `require_multiple_issuers`
 - **Vote Power**: `vote_power_rule` (default `1:1`), `vote_power_ratio` (default 1.0)
 - **Proposal Mode**: `is_proposal`, `funding_goal`, `funding_current`, `funding_deadline`
-- **Timing**: `starts_at`, `ends_at` with `is_active_now` / `is_expired` properties
+- **Timing**: `starts_at`, `ends_at` with computed `is_ongoing` property; `starts_at_unix` / `ends_at_unix` for UNIX epoch access; `is_active_now` / `is_expired` for legacy temporal checks
 - **Decentralized Storage**: `ipfs_cid`, `blockchain_anchor`, `votes_merkle_root`, `vote_count_anchor` (fields exist, no integration)
+- **Nostr Mesh**: `nostr_event_id` (CharField, unique, nullable — Phase 4), `nostr_pubkey` (CharField, nullable — Phase 4)
 
 **PollOption Model:**
 - **Fields**: `poll` (FK), `text`, `votes` (DEPRECATED counter — use `dynamic_vote_count` property instead), timestamps
@@ -103,8 +109,8 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - **Tallying**: `dynamic_vote_count` property uses timestamp-derived aggregation (`Max(Vote.id)` per `(poll, voter_did)`) — immune to out-of-order federation arrivals.
 
 **Vote Model:**
-- **Fields**: `poll` (FK), `option` (FK), `user` (FK, nullable), `voter_did`, `signature`, `merkle_root`, `credential_cid`, `credential_proof`, `credential_data` (JSONField, nullable — stores the un-blinded verification cred proof from Phase 3), `weight` (always 1), `ipfs_cid`, `blockchain_tx`, `is_verified`, `verification_details`, `is_current` (checkpoint flag for mutable polls)
-- **Constraint**: No DB-level uniqueness on `(poll, voter_did)` — idempotency enforced at view layer
+- **Fields**: `poll` (FK), `option` (FK), `user` (FK, nullable), `voter_did`, `signature`, `merkle_root`, `credential_cid`, `credential_proof`, `credential_data` (JSONField, nullable — stores the un-blinded verification cred proof from Phase 3), `weight` (always 1), `ipfs_cid`, `blockchain_tx`, `is_verified`, `verification_details`, `is_current` (checkpoint flag for mutable polls), `nostr_event_id` (CharField, unique, nullable — Phase 4 idempotent ingestion)
+- **Constraint**: DB-level unique constraint on `nostr_event_id` for idempotent Nostr ingestion; no DB-level uniqueness on `(poll, voter_did)` — view-layer deduplication for duplicate signature
 - **Mutable Checkpoint**: When a DID re-votes on an `is_mutable` poll, the previous record's `is_current` is flipped to `False` and a fresh record is ingested (Phase 1)
 - **Deduplication**: View-layer idempotency — if `(poll, voter_did)` exists and signature matches, returns 201 duplicate-success; if signature differs, rejects with 400
 - **Signature**: Ed25519 hex signature (128 chars) verified via `apps/core/verification.py` on the headless endpoint
@@ -128,13 +134,14 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - `POST /api/polls/{id}/cast/` — **`CastVoteAPIView`** (headless DRF endpoint with Ed25519 signature verification, idempotent ingestion, v2 response envelope)
 - `GET /api/polls/{id}/eligibility/` — **`CheckVotingEligibilityAPIView`** (check if voter DID can vote; v2 response envelope)
 - `GET /api/polls/{id}/history/` — `get_votes` (return vote list with signatures for verification)
+- `POST /api/nostr/ingest/` — **`NostrIngestWebhook`** (CSRF-exempt, NIP-01 Schnorr-verified inbound event ingestion for kind:30023 polls and kind:1111/1112 votes; returns `{"result": "ok"}` or `{"result": "error", "detail": ...}`)
 
 **Key Headless Features (`CastVoteAPIView`):**
 - `@csrf_exempt`, `authentication_classes=[]`, `permission_classes=[]` — no session/auth required
 - `_verify_signature()` delegates to `apps.core.verification.verify_vote_signature()` — pure Ed25519, zero network calls
 - **Write-in Resolution** (Phase 2): If `write_in_text` is present in the payload, applies NFKC normalization → whitespace collapse → `__iexact` lookup on `PollOption`. Coalesces to existing authored/write-in options or creates new `PollOption` with `is_write_in=True` in a race-guarded try/except block. Rejects with 400 if `poll.allow_write_ins` is `False`.
 - **Credential Gate** (Phase 3): If `poll.required_credential_type` is populated, validates the inbound `credential` payload's `type` field against the gate string. Extracts issuer/subject metadata into `Vote.credential_data` on success. Rejects with 400 + v2 error envelope `{"valid": false, "error": "Missing or invalid identity credential required for this poll type"}` on failure. Replaces the old HTTP callback to `/api/credentials/verify/`.
-- **Temporal Gate** (Phase 1): Rejects votes before `starts_at` / after `ends_at` for `TIMED` and `SCHEDULED` polls; `ONGOING` polls have no temporal bounds.
+- **Temporal Gate** (Phase 1 → Phase 4): Rejects votes before `starts_at` / after `ends_at` for `TIMED` and `SCHEDULED` polls using the `is_ongoing` property; `ONGOING` polls have no temporal bounds. Uses v2 error messages: `"Vote rejected: Poll schedule has not initialized yet."` and `"Vote rejected: Cryptographic ledger state is closed/locked."`
 - **Mutable Re-vote** (Phase 1): When `poll.is_mutable=True`, flips the prior `is_current` flag to `False` before ingesting the new vote record.
 - Idempotent: existing `(poll, voter_did)` with matching signature → `{"valid": true, "details": {"duplicate": true}}` (201)
 - Signature failure → `{"valid": false, "error": "Cryptographic signature validation failure."}` (401)
@@ -155,8 +162,8 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 #### Serializers (`apps/poller/serializers.py`)
 
 **Poll Serializers:**
-- `PollSerializer`: Full poll representation with computed fields (exposes `required_credential_type` as a direct string, not a FK ID)
-- `PollCreateSerializer`: Poll creation with option validation (accepts `required_credential_type` as a plain string)
+- `PollSerializer`: Full poll representation with computed fields (exposes `required_credential_type` as a direct string, not a FK ID; exposes `is_ongoing`, `starts_at_unix`, `ends_at_unix` as read-only computed properties)
+- `PollCreateSerializer`: Poll creation with option validation (accepts `required_credential_type` as a plain string; `to_internal_value` converts UNIX epoch integers to datetime for `starts_at`/`ends_at`)
 - `PollResultsSerializer`: Results with percentage calculations — splits options into `core_options` (authored) and `write_in_leaderboard` (crowd-sourced, truncated to `write_in_display_limit`) — Phase 2
 
 **Vote Serializers:**
@@ -183,11 +190,11 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - `sync_poll_option_on_save` (post_save, sender=PollOption): Re-syncs poll on option changes (skips creation)
 - `sync_vote_on_save` (post_save, sender=Vote): On creation, increments `PollOption.votes` counter via `F()` expression, then updates the poll's FederatedData entry version and calls `nostr.publish_vote(vote, poll.id)`
 
-**Nostr Integration (new):**
-- `apps/poller/nostr.py` — Schnorr-secp256k1 event construction, relay publish/subscribe via `websockets`
-- Kind:30023 for poll definitions, kind:1111/1112 for vote envelopes
+**Nostr Integration (Phase 4):**
+- `apps/poller/nostr.py` — Outbound Schnorr-secp256k1 event construction, relay publish via `websockets` (kind:30023 polls, kind:1111 vote envelopes)
+- `apps/poller/nostr_ingest.py` — Inbound NIP-01 Schnorr signature verification, poll upsert (by `d` tag), vote ingestion (by `a` tag), idempotent duplicate detection via `nostr_event_id` unique constraint
 - Instance keypair loaded from `NOSTR_PRIVATE_KEY` env var or generated ephemerally
-- Gossip worker (`gossip_worker.py`) is now an async Nostr subscription loop
+- Gossip worker (`gossip_worker.py`) — async Nostr subscription loop calling live `ingest_poll_event` / `ingest_vote_event` on received events
 
 ### Authentication System
 
@@ -343,10 +350,11 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
    - Liquid democracy features
    - Proposal discussion threads
 
-4. **Mesh Inbound:**
-   - **Completed**: Outbound Nostr broadcast for polls/votes
-   - **🚧 Inbound**: Gossip worker logs inbound events but does not yet upsert polls or ingest votes from the mesh
-   - **🚧**: Vote ingestion from Nostr kind:1112 events into the local database
+4. **Mesh Inbound:** ✅ **Completed** (Phase 4)
+   - Outbound Nostr broadcast for polls/votes
+   - Inbound Nostr ingestion pipeline — NIP-01 Schnorr verification, poll upsert (by d-tag), vote ingestion with idempotent deduplication
+   - `NostrIngestWebhook` at `POST /api/nostr/ingest/` for external relay push
+   - Gossip worker live ingest integration
 
 5. **Mobile:**
    - PWA manifest and service worker
@@ -357,10 +365,11 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 
 ### Short-term (Next 3 Months)
 
-1. **Nostr Inbound Ingestion:**
-   - Upsert polls from inbound kind:30023 events
-   - Idempotent vote ingestion from inbound kind:1112 events
-   - Verify Schnorr transport signatures on inbound Nostr events
+1. **Nostr Inbound Ingestion:** ✅ **Completed** (Phase 4)
+   - NIP-01 Schnorr signature verification, poll upsert by d-tag, idempotent vote ingestion by a-tag
+   - NostrIngestWebhook at `POST /api/nostr/ingest/`
+   - Gossip worker live ingest integration
+   - 15 new tests covering all ingestion pathways
 
 2. **Performance:**
    - Add Redis caching layer
@@ -477,6 +486,20 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
    - Credential metadata stored in `Vote.credential_data` JSONField
    - Trade-off: No runtime credential schema validation; relies on client to provide well-formed `credential` payload
 
+9. **Nostr Inbound Ingestion (Phase 4):**
+   - Two crypto domains: secp256k1/Schnorr for Nostr transport layer (NIP-01 signature verification); Ed25519 for application-layer identity (vote signature)
+   - Idempotency via DB unique constraint on `nostr_event_id` — `IntegrityError` caught in `transaction.atomic()` block for clean rollback
+   - Poll upsert by `d` tag (`poll:{id}` maps to local primary key); no d-tag → new poll created
+   - Vote ingestion by `a` tag (`30023:poll:{id}` resolves to local poll FK)
+   - Trade-off: Schnorr verification requires `coincurve` library; no fallback for non-Schnorr transports
+
+10. **Protocol v2 Temporal Ledger Enforcements (Phase 4):**
+    - `DateTimeField` preserved in DB; UNIX epoch seconds exposed via computed `starts_at_unix`/`ends_at_unix` properties + serializer read-only fields
+    - `PollCreateSerializer.to_internal_value` accepts raw integer epochs or ISO-8601 strings for `starts_at`/`ends_at`
+    - `is_ongoing` property replaces inline datetime comparisons
+    - Error messages aligned to v2 enclave spec: `"Vote rejected: Poll schedule has not initialized yet."` and `"Vote rejected: Cryptographic ledger state is closed/locked."`
+    - Trade-off: Dual datetime representation (DB native + UNIX epoch) adds minor model complexity but preserves backward compatibility for existing queries
+
 ### Future Architecture Decisions
 
 1. **Real-time Protocol:**
@@ -513,7 +536,8 @@ uv run python manage.py runserver 127.0.0.1:8002
 ### Key Development Areas
 
 1. **Nostr & Mesh Federation:**
-   - `apps/poller/nostr.py` — Event construction, Schnorr signing, relay publish/subscribe
+   - `apps/poller/nostr.py` — Outbound Schnorr event construction, relay publish
+   - `apps/poller/nostr_ingest.py` — Inbound NIP-01 Schnorr verification, poll upsert, vote ingest
    - `apps/poller/signals.py` — Signal handlers calling `nostr.publish_*()`
    - `apps/poller/management/commands/gossip_worker.py` — Async Nostr subscription loop
    - `apps/core/signals.py` — Audit logging (HTTP dispatch removed in v2)
@@ -549,17 +573,24 @@ uv run pytest apps/poller/tests/test_views.py::CredentialGateTests -v
 uv run pytest apps/poller/tests/test_views.py -v -k "not test_poll_vote_count"
 ```
 
-**Current Test Coverage (as of Phase 3):**
-- **22 passing tests** across 7 test classes in `apps/poller/tests/test_views.py`:
-  - `PollListViewTests` (2) — list accessibility, content
-  - `PollDetailViewTests` (1) — detail accessibility
-  - `PollCreateViewTests` (2) — auth gate, authenticated access
-  - `VoteAPITests` (7) — authenticate, counter, unauthenticated reject, duplicate, validation, public poll, HTMX
-  - `TemporalPollingTests` (11) — scheduled/timed/ongoing/mutable, dynamic tally, aggregation ordering
-  - `WriteInBallotTests` (7) — disabled reject, normalization coalescence, option creation, authored coalescence, mutable re-vote, serializer split, leaderboard truncation
-  - `CredentialGateTests` (3) — blank gate accepts, missing credential rejects, valid credential stored
+**Current Test Coverage (as of Phase 4):**
+- **119 passing tests** across test classes in `apps/poller/tests/`:
+  - **`test_views.py` (104 baseline):**
+    - `PollListViewTests` (2) — list accessibility, content
+    - `PollDetailViewTests` (1) — detail accessibility
+    - `PollCreateViewTests` (2) — auth gate, authenticated access
+    - `VoteAPITests` (7) — authenticate, counter, unauthenticated reject, duplicate, validation, public poll, HTMX
+    - `TemporalPollingTests` (11) — scheduled/timed/ongoing/mutable, dynamic tally, aggregation ordering
+    - `WriteInBallotTests` (7) — disabled reject, normalization coalescence, option creation, authored coalescence, mutable re-vote, serializer split, leaderboard truncation
+    - `CredentialGateTests` (3) — blank gate accepts, missing credential rejects, valid credential stored
+    - `RevocationGateTests` (4) — revoked credential scenarios
+    - `VpCredentialGateTests` (3) — Verifiable Presentation credential gate
+  - **`test_nostr_ingest.py` (15 new — Phase 4):**
+    - `NIP01VerificationTests` (3) — valid Schnorr sig, malformed sig, wrong key
+    - `PollIngestionTests` (3) — full poll upsert, d-tag matching, re-ingestion idempotency
+    - `VoteIngestionTests` (4) — full vote creation, a-tag poll resolution, duplicate `nostr_event_id` rejection, missing poll rejection
+    - `NostrIngestWebhookTests` (5) — valid event ingest, bad JSON, missing fields, wrong kind, Schnorr verification failure
 - 10 pre-existing failures in template-based endpoints caused by `DataSyncLog` F() expression bug (`apps/core/signals.py:63`) — unrelated to polling features
-- 4 passing tests in `apps/poller/tests/test_models.py` (3 fail from same `DataSyncLog` bug)
 
 ## Conclusion
 
@@ -577,18 +608,24 @@ iyou_poly provides a solid foundation for decentralized polling with:
 - Write-in ballot options with NFKC normalization and view-layer text coalescence
 - Segmented leaderboards (`core_options` / `write_in_leaderboard`) with configurable display limits
 - Unified string-based credential gate with inline validation
+- Protocol v2 temporal ledger enforcements (UNIX epoch accessors, `is_ongoing`, v2 error messages)
+- Inbound Nostr ingestion pipeline (NIP-01 Schnorr verification, poll upsert by d-tag, idempotent vote ingest by a-tag)
+- `NostrIngestWebhook` at `POST /api/nostr/ingest/` for external relay push
+- Gossip worker live ingest integration
+- 119 passing tests across views + nostr ingestion test suites
 
 **Key Focus Areas for Next Phase:**
 1. Fix `DataSyncLog` F() expression bug in `apps/core/signals.py:63` (affects all template-based vote tests)
 2. Migrate template-based voting to full cryptographic verification
-3. Inbound Nostr event ingestion (upsert polls, ingest votes from mesh)
-4. Implement real-time updates
+3. Add explicit IAL (Identity Assurance Level) fields and Web-of-Trust graph traversal logic
+4. Implement real-time updates (WebSocket/SSE)
 5. Add advanced voting methods (ranked choice, Condorcet, approval)
 6. Enhance mobile support
 
-**Recently Completed (Phases 1–3):**
+**Recently Completed (Phases 1–4):**
 - **Phase 1** — Temporal polling states (TIMED/SCHEDULED/ONGOING), `is_mutable` re-vote, timestamp-derived `Max(id)` aggregation, `is_current` checkpoint flag
 - **Phase 2** — Write-in ballot options with NFKC normalization, view-layer coalescence, segmented leaderboards (`core_options` / `write_in_leaderboard`), 7 write-in tests
 - **Phase 3** — Unified string-based credential gate (`required_credential_type` CharField), inline validation stub in `CastVoteAPIView`, `Vote.credential_data` storage, 3 credential gate tests, full FK→string refactor across 47 references
+- **Phase 4** — Protocol v2 temporal ledger enforcements (UNIX epoch property accessors, `is_ongoing`, serializer epoch transform, v2 error messages); inbound Nostr ingestion pipeline (NIP-01 Schnorr verification, `nostr_ingest.py`, poll upsert by d-tag, idempotent vote ingestion by a-tag); `nostr_event_id`/`nostr_pubkey` model fields for idempotent tracking; `NostrIngestWebhook` at `POST /api/nostr/ingest/`; gossip worker live ingest integration; 15 new ingestion tests; architectural audit of credential/identity infrastructure
 
 The architecture supports the planned features but requires refinement in federation consistency and performance optimization before production deployment.

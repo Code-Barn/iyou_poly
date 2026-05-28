@@ -211,10 +211,39 @@ class Poll(models.Model):
         help_text=_("Blockchain anchor for vote count."),
     )
 
+    nostr_event_id = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=_("SHA-256 event ID of the originating Nostr event (kind:30023)."),
+    )
+    nostr_pubkey = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text=_("Pubkey hex of the Nostr event creator."),
+    )
+
     is_active = models.BooleanField(
         default=True,
         help_text=_("Whether this poll is active and available for voting."),
     )
+    @property
+    def is_ongoing(self):
+        return self.temporal_type == TemporalPollType.ONGOING
+
+    @property
+    def starts_at_unix(self) -> int | None:
+        if self.starts_at is None:
+            return None
+        return int(self.starts_at.timestamp())
+
+    @property
+    def ends_at_unix(self) -> int | None:
+        if self.ends_at is None:
+            return None
+        return int(self.ends_at.timestamp())
+
     # Write-in ballot governance
     allow_write_ins = models.BooleanField(
         default=False,
@@ -434,6 +463,14 @@ class Vote(models.Model):
         max_length=255,
         blank=True,
         help_text=_("Blockchain transaction hash for this vote."),
+    )
+
+    nostr_event_id = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=_("SHA-256 event ID of the originating Nostr vote event (kind:1112)."),
     )
 
     # Verification status
