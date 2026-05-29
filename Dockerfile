@@ -15,7 +15,7 @@ FROM python:3.13-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
-COPY --from=builder /docker-entrypoint.sh /
+COPY --from=builder /app/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 ENV PATH="/app/.venv/bin:$PATH"
 ENTRYPOINT ["/docker-entrypoint.sh"]
