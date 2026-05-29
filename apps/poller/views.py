@@ -747,6 +747,7 @@ from .serializers import (
     VoteCreateSerializer,
 )
 from .nostr_ingest import ingest_poll_event, ingest_vote_event
+from .serializers import NostrEventSerializer
 
 
 class PollViewSet(viewsets.ModelViewSet):
@@ -1740,6 +1741,14 @@ class NostrIngestWebhook(APIView):
         if not isinstance(body, dict) or "kind" not in body:
             return Response(
                 err("Missing 'kind' field — not a valid Nostr event"),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = NostrEventSerializer(data=body)
+        if not serializer.is_valid():
+            print(f"[SCHEMA_FAIL] Ingestion rejected. Errors: {serializer.errors}")
+            return Response(
+                err("Schema validation failed", details=serializer.errors),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

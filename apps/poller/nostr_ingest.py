@@ -6,7 +6,7 @@ existing Poll / Vote creation pipeline with upsert semantics for idempotent
 relay firehose processing.
 """
 
-import binascii
+import base64
 import hashlib
 import json
 import logging
@@ -44,6 +44,54 @@ def _get_nostr_system_user() -> User:
     return user
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _decode_field(value: str) -> bytes:
+    """Decode a field that may be hex (64/128 chars) or standard Base64.
+
+    Tauri enclave outputs Base64; the browser should convert it to hex before
+    sending, but a flawed heuristic sometimes skips the conversion.  This
+    helper accepts either format.
+    """
+    if not value:
+        raise ValueError("Empty field")
+    # Try hex first (most common from browser)
+    try:
+        return bytes.fromhex(value)
+    except ValueError:
+        pass
+    # Fall back to standard Base64
+    return base64.b64decode(value)
+
+
+# ── NIP-01 canonical serialization ──────────────────────────────────────────
+
+
+def canonical_serialize_event(event: dict[str, Any]) -> bytes:
+    """Serialize a Nostr event dict into the strict NIP-01 canonical array.
+
+    Produces ``[0, pubkey, created_at, kind, tags, content]`` as minified JSON
+    with zero whitespace between separators, matching the exact footprint that
+    the iyou_home signer uses before signing.
+    """
+    serialized_array = [
+        0,
+        event.get("pubkey"),
+        int(event.get("created_at")),
+        int(event.get("kind")),
+        event.get("tags", []),
+        event.get("content", ""),
+    ]
+    raw_string = json.dumps(
+        serialized_array,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    raw_string = raw_string.replace("\\'", "'")
+    return raw_string.encode("utf-8")
+
+
 # ── NIP-01 Schnorr verification ──────────────────────────────────────────────
 
 
@@ -59,26 +107,18 @@ def verify_nostr_event(event: dict[str, Any]) -> bool:
     by the enclave's native Ed25519 platform.
     """
     try:
-        serialized = json.dumps(
-            [
-                0,
-                event["pubkey"],
-                event["created_at"],
-                event["kind"],
-                event["tags"],
-                event["content"],
-            ],
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        computed_id = hashlib.sha256(serialized.encode()).hexdigest()
+        serialized_bytes = canonical_serialize_event(event)
+        computed_id = hashlib.sha256(serialized_bytes).hexdigest()
         if computed_id != event.get("id"):
+            print(f"[SCHNORR_DIAG] computed_id != event[id]")
+            print(f"[SCHNORR_DIAG] computed:  {computed_id}")
+            print(f"[SCHNORR_DIAG] event[id]: {event.get('id')}")
             return False
 
-        pubkey = coincurve.PublicKeyXOnly(bytes.fromhex(event["pubkey"]))
+        pubkey = coincurve.PublicKeyXOnly(_decode_field(event["pubkey"]))
         if pubkey.verify(
-            bytes.fromhex(event["sig"]),
-            bytes.fromhex(computed_id),
+            _decode_field(event["sig"]),
+            _decode_field(computed_id),
         ):
             return True
     except Exception as exc:
@@ -86,28 +126,35 @@ def verify_nostr_event(event: dict[str, Any]) -> bool:
 
     # Fallback — Ed25519 (mesh signatures)
     try:
-        pubkey_bytes = binascii.unhexlify(event["pubkey"])
-        sig_bytes = binascii.unhexlify(event["sig"])
+        event_id_hex = event.get("id")
+        sig_hex = event.get("sig")
+        pubkey_hex = event.get("pubkey")
 
-        serialized = json.dumps(
-            [
-                0,
-                event["pubkey"],
-                event["created_at"],
-                event["kind"],
-                event["tags"],
-                event["content"],
-            ],
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        public_key = ed25519.Ed25519PublicKey.from_public_bytes(pubkey_bytes)
-        serialized_bytes = serialized.encode()
-        logger.debug("Ed25519 fallback — raw sig hex: %s", event.get("sig", ""))
-        logger.debug("Ed25519 fallback — serialized message UTF-8: %s", serialized_bytes.decode("utf-8"))
-        public_key.verify(sig_bytes, serialized_bytes)
+        if not all([event_id_hex, sig_hex, pubkey_hex]):
+            print("[ED25519_DIAG] Missing one or more required fields (id/sig/pubkey)")
+            return False
+
+        print("=" * 80)
+        print(f"[ED25519_DIAG] event_id_hex ({len(event_id_hex)} chars): {event_id_hex}")
+        print(f"[ED25519_DIAG] pubkey_hex  ({len(pubkey_hex)} chars):  {pubkey_hex}")
+        print(f"[ED25519_DIAG] sig_hex     ({len(sig_hex)} chars):     {sig_hex}")
+
+        msg_bytes = _decode_field(event_id_hex)
+        sig_bytes = _decode_field(sig_hex)
+        vk_bytes = _decode_field(pubkey_hex)
+
+        print(f"[ED25519_DIAG] msg_bytes (len={len(msg_bytes)}): {msg_bytes.hex()}")
+        print(f"[ED25519_DIAG] sig_bytes (len={len(sig_bytes)}): {sig_bytes.hex()}")
+        print(f"[ED25519_DIAG] vk_bytes  (len={len(vk_bytes)}):  {vk_bytes.hex()}")
+
+        verifying_key = ed25519.Ed25519PublicKey.from_public_bytes(vk_bytes)
+        verifying_key.verify(sig_bytes, msg_bytes)
+
+        print("[ED25519_DIAG] VERIFICATION PASSED")
+        logger.debug("Ed25519 fallback — signature verified against raw event ID bytes")
         return True
     except Exception as exc:
+        print(f"[ED25519_DIAG] EXCEPTION: {type(exc).__name__}: {exc}")
         logger.debug("Ed25519 fallback validation failed: %s", exc)
         return False
 

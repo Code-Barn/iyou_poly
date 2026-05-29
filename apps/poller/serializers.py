@@ -305,4 +305,16 @@ class PollResultsSerializer(serializers.ModelSerializer):
         ).count()
 
 
+class NostrEventSerializer(serializers.Serializer):
+    """Validate a NIP-01 Nostr event envelope structure."""
+
+    id = serializers.CharField(required=True)
+    pubkey = serializers.CharField(required=True)
+    created_at = serializers.IntegerField(required=True)
+    kind = serializers.IntegerField(required=True)
+    tags = serializers.ListField(required=True)
+    content = serializers.CharField(required=True, allow_blank=True)
+    sig = serializers.CharField(required=True)
+
+
 from django.utils.translation import gettext_lazy as _

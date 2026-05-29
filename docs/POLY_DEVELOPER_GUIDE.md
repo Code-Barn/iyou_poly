@@ -15,7 +15,7 @@ iyou_poly is a Django-based decentralized polling platform using OIDC for authen
   - `Vote.signature` field stores Ed25519 hex signatures (128 chars)
   - Inbound votes at `POST /api/polls/{id}/cast/` are verified via `apps/core/verification.py:verify_vote_signature()` — pure-Python Ed25519 validation with **zero network dependencies**
   - The public key is extracted directly from the `did:key:z6M...` voter DID: base58btc decode → strip `\xed` multicodec → load 32-byte key
-  - Canonical payload: `json.dumps(vote_envelope, sort_keys=True, separators=(',', ':'))`
+  - Canonical payload: `json.dumps(vote_envelope, sort_keys=True, separators=(',', ':'))`, then SHA-256 hashed before Ed25519 verification (the Tauri enclave signs the raw 32-byte hash, not the full JSON text)
   - Bridge (`iyou_home` port 9001) is used for *signing only*; verification is local
 - **Verification**: Headless endpoint validates cryptographically. Template-based votes (HTMX) still use `is_verified=True` pending full migration
 
@@ -24,7 +24,7 @@ iyou_poly is a Django-based decentralized polling platform using OIDC for authen
 1. **User Authentication**: OIDC-based authentication via `iyou_idp`; username mapped from `sub` claim (the full DID string, e.g. `did:key:z6Mk...`)
 2. **Vote Casting** (Headless mode):
    - Client sends `voter_did`, `signature`, and `vote_envelope` JSON to `POST /api/polls/{id}/cast/`
-   - Server canonicalises the envelope via `json.dumps(sort_keys=True, separators=(',', ':'))`
+   - Server canonicalises the envelope via `json.dumps(sort_keys=True, separators=(',', ':'))`, then SHA-256 hashes the result to produce the 32-byte event ID hash that the client signed
    - Server extracts the voter's Ed25519 public key from the DID string
    - Server verifies the Ed25519 signature using `cryptography.hazmat.primitives.asymmetric.ed25519`
    - On success, vote stored with signature in database; duplicate `(poll, voter_did)` with matching signature returns 201 duplicate-success
@@ -75,7 +75,9 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - ✅ Nostr event ID tracking (`nostr_event_id` on Poll+Vote, `nostr_pubkey` on Poll) for unique idempotent ingestion — Phase 4
 - ✅ `NostrIngestWebhook` at `POST /api/nostr/ingest/` — CSRF-exempt, Schnorr-verified inbound event relay — Phase 4
 - ✅ Gossip worker live ingest integration (calls `ingest_poll_event` / `ingest_vote_event` from subscription loop) — Phase 4
-- ✅ Ed25519 signature verification fallback in `verify_nostr_event` — Schnorr-first, Ed25519 fallback for mesh signatures — Phase 4
+- ✅ Ed25519 signature verification fallback in `verify_nostr_event` — Schnorr-first, Ed25519 fallback for mesh signatures. Verifies against raw event ID bytes (`bytes.fromhex(event['id'])`), bypassing JSON serialization variations — Phase 4
+- ✅ `_decode_field()` helper in `nostr_ingest.py` — accepts hex or standard Base64 for `id`, `sig`, `pubkey` fields, tolerating browser-side Base64→hex conversion gaps — Phase 4
+- ✅ `NostrEventSerializer` in `apps/poller/serializers.py` — validates NIP-01 event structure (`id`, `pubkey`, `created_at`, `kind`, `tags`, `content`, `sig`) before ingestion — Phase 4
 - ✅ CORS whitelist configured (`CORS_ALLOWED_ORIGINS` for port 8001 iyou_wun satellite) — Phase 4
 
 **Partially Implemented:**
@@ -468,6 +470,7 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 5. **Signature Verification:**
    - Pure-Python Ed25519 via `cryptography` library (no bridge dependency)
    - DID public key extracted locally from `did:key:z6M...` identifier
+   - Verification payload: canonical JSON (sorted keys, no whitespace) → SHA-256 hash → verify Ed25519 against the 32-byte hash digest (the Tauri enclave signs the raw hash, not the JSON text)
    - Trade-off: No hardware-backed verification; fully stateless
 
 6. **Idempotency:**

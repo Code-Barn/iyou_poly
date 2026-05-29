@@ -23,6 +23,7 @@ from ``did:key:z6M...`` identifiers.
 """
 
 import datetime
+import hashlib
 import json
 import logging
 from typing import Any, Tuple
@@ -178,8 +179,11 @@ def verify_vote_signature(
         separators=(",", ":"),
     ).encode("utf-8")
 
+    # Hash the payload to produce the 32-byte event ID the client signs
+    event_id_bytes = hashlib.sha256(canonical_payload).digest()
+
     try:
-        public_key.verify(signature, canonical_payload)
+        public_key.verify(signature, event_id_bytes)
         return True
     except Exception as exc:
         logger.debug("Ed25519 signature verification failed: %s", exc)
