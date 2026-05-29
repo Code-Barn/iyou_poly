@@ -43,7 +43,7 @@
 
         <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-6">
             <span>
-                Created by {{ poll.created_by.username }} •
+                Created by {{ poll.created_by.first_name|default:poll.created_by.username }} •
                 {{ poll.created_at|timesince }} ago
             </span>
         </div>

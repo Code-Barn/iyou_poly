@@ -22,6 +22,7 @@ import coincurve
 from django.contrib.auth import get_user_model
 
 from apps.poller.models import Poll, PollOption, PollType, Vote
+from apps.core.verification import _pubkey_from_did
 
 User = get_user_model()
 
@@ -40,6 +41,23 @@ def _get_nostr_system_user() -> User:
         defaults={"is_active": True},
     )
     return user
+
+
+def _resolve_user_by_nostr_pubkey(pubkey_hex: str) -> User | None:
+    """Match a Nostr secp256k1 x-only pubkey to a local User via their Ed25519 DID.
+
+    Iterates users whose ``username`` stores a ``did:key:z6M...`` identifier,
+    extracts the raw 32-byte Ed25519 public key from each DID via
+    ``_pubkey_from_did``, and compares its hex encoding to the incoming
+    ``pubkey_hex``.  Returns the matching ``User`` or ``None``.
+    """
+    for user in User.objects.filter(username__startswith="did:key:z"):
+        ed_key = _pubkey_from_did(user.username)
+        if ed_key is None:
+            continue
+        if ed_key.public_bytes_raw().hex() == pubkey_hex:
+            return user
+    return None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -197,7 +215,9 @@ def ingest_poll_event(event: dict[str, Any]) -> Poll | None:
     d_tag = _extract_d_tag_value(tags)
     poll_id = _parse_poll_id_from_d_tag(d_tag) if d_tag else None
 
-    nostr_user = _get_nostr_system_user()
+    creator_user = _resolve_user_by_nostr_pubkey(event.get("pubkey", ""))
+    if creator_user is None:
+        creator_user = _get_nostr_system_user()
 
     if content is None:
         defaults = {
@@ -222,7 +242,7 @@ def ingest_poll_event(event: dict[str, Any]) -> Poll | None:
         }
         option_texts = content.get("options", [])
 
-    create_defaults = {**defaults, "created_by": nostr_user}
+    create_defaults = {**defaults, "created_by": creator_user}
 
     if poll_id is not None:
         try:

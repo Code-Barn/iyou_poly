@@ -105,7 +105,7 @@ class EmbeddablePollWidget(View):
                 "title": poll.title,
                 "description": poll.description,
                 "poll_type": poll.poll_type,
-                "created_by": poll.created_by.username if poll.created_by else "Unknown",
+                "created_by": (poll.created_by.first_name or poll.created_by.username) if poll.created_by else "Unknown",
                 "total_votes": poll.total_votes,
                 "is_active_now": poll.is_active_now,
                 "is_expired": poll.is_expired,

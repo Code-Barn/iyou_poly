@@ -60,7 +60,7 @@ def poll_api(request: HttpRequest) -> JsonResponse:
                 "id": poll.id,
                 "title": poll.title,
                 "description": poll.description,
-                "created_by": poll.created_by.username,
+                "created_by": poll.created_by.first_name or poll.created_by.username,
                 "created_at": poll.created_at.isoformat(),
                 "options": [
                     {
@@ -162,7 +162,7 @@ def poll_detail_api(request: HttpRequest, poll_id: int) -> JsonResponse:
                 "id": poll.id,
                 "title": poll.title,
                 "description": poll.description,
-                "created_by": poll.created_by.username,
+                "created_by": poll.created_by.first_name or poll.created_by.username,
                 "created_at": poll.created_at.isoformat(),
                 "options": [
                     {
@@ -557,7 +557,7 @@ def get_polls(request: HttpRequest) -> JsonResponse:
             "id": poll.id,
             "title": poll.title,
             "description": poll.description,
-            "created_by": poll.created_by.username,
+            "created_by": poll.created_by.first_name or poll.created_by.username,
             "created_at": poll.created_at.isoformat(),
             "options": [
                 {

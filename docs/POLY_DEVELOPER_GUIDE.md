@@ -79,6 +79,7 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - ✅ `_decode_field()` helper in `nostr_ingest.py` — accepts hex or standard Base64 for `id`, `sig`, `pubkey` fields, tolerating browser-side Base64→hex conversion gaps — Phase 4
 - ✅ `NostrEventSerializer` in `apps/poller/serializers.py` — validates NIP-01 event structure (`id`, `pubkey`, `created_at`, `kind`, `tags`, `content`, `sig`) before ingestion — Phase 4
 - ✅ CORS whitelist configured (`CORS_ALLOWED_ORIGINS` for port 8001 iyou_wun satellite) — Phase 4
+- ✅ Cross-curve user attribution on Nostr ingestion — `_resolve_user_by_nostr_pubkey()` in `nostr_ingest.py` matches an event's secp256k1 x-only pubkey to a local `User` whose `username` stores their Ed25519 DID (`did:key:z...`). Users provisioned via OIDC (`username = sub` = DID) are found when their Ed25519 public key bytes (extracted via `_pubkey_from_did()`) match the event's `pubkey` hex. Non-matching events fall back to the `"nostr"` system user. See ADR #12. — Phase 4
 
 **Partially Implemented:**
 - 🟡 DID-based identity (did:key, did:ethr, did:web, did:ion) — DIDs are used in the credential/voting flow (scope checking, eligibility), but auth remains OIDC-only
@@ -509,9 +510,18 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
     - Trade-off: Dual datetime representation (DB native + UNIX epoch) adds minor model complexity but preserves backward compatibility for existing queries
 
 11. **CORS Whitelist for Mesh Satellite (Phase 4):**
-    - `django-cors-headers` added to dependencies; `CorsMiddleware` placed at the top of the middleware stack
-    - `CORS_ALLOWED_ORIGINS` set to `["http://127.0.0.1:8001", "http://localhost:8001"]` for iyou_wun ingest push
-    - Trade-off: Restrictive whitelist must be updated per-env; wildcard origins rejected by design
+     - `django-cors-headers` added to dependencies; `CorsMiddleware` placed at the top of the middleware stack
+     - `CORS_ALLOWED_ORIGINS` set to `["http://127.0.0.1:8001", "http://localhost:8001"]` for iyou_wun ingest push
+     - Trade-off: Restrictive whitelist must be updated per-env; wildcard origins rejected by design
+
+12. **Cross-Curve User Attribution for Nostr Ingestion (Phase 4):**
+     - **Problem:** Ingested Nostr events carry a secp256k1 x-only `pubkey`, but the application's identity layer is Ed25519-based (`did:key:z...`). Users provisioned via OIDC store their full DID URI in `User.username` with no shared ID field. Without attribution, all ingested polls bind to the "nostr" system user.
+     - **Solution:** The same 32-byte entropy seed can produce both an Ed25519 keypair (for the DID) and a secp256k1 keypair (for Nostr). When the Ed25519 public key bytes happen to equal the secp256k1 x-only public key bytes (x-coordinate of `secret * G`), a hex comparison is deterministic and phonebook-grade.
+     - **Implementation:** `_resolve_user_by_nostr_pubkey(pubkey_hex)` in `apps/poller/nostr_ingest.py` iterates `User.objects.filter(username__startswith="did:key:z")`, extracts the raw 32-byte Ed25519 public key from each DID via `_pubkey_from_did()`, compares hex-encoded bytes against the event's `pubkey`. On match, the poll's `created_by` is set to that User; on miss, falls back to the "nostr" system user.
+     - **What must appear in the DID:** The secp256k1 **x-only public key** (i.e. the outcome of `secret * G`), NOT the raw secret bytes. The `coincurve.PublicKeyXOnly.from_secret(secret)` derivation is the normative source of truth.
+     - **Filter prefix trap:** The base58btc encoding of a secp256k1-derived x-only key with the `0xed` multicodec prefix produces a string starting with `z2D...`, NOT `z6M...`. Using `username__startswith="did:key:z6M"` silently filters out all cross-curve users. The correct filter is `"did:key:z"`.
+     - **Key insight:** `_pubkey_from_did` accepts any 32-byte payload; it calls `Ed25519PublicKey.from_public_bytes()` from the `cryptography` library, which wraps the bytes without performing Ed25519 point validation. No Ed25519 curve operations are involved — the DID is merely a transport container for raw bytes.
+     - **Trade-off:** O(n) linear scan of all DID users per ingested event. Acceptable at current scale (dozens of users). Future optimisation: add an indexed `nostr_pubkey` `CharField` to User with a data migration.
 
 ### Future Architecture Decisions
 
@@ -587,7 +597,7 @@ uv run pytest apps/poller/tests/test_views.py -v -k "not test_poll_vote_count"
 ```
 
 **Current Test Coverage (as of Phase 4):**
-- **66 passing tests** across test files in `apps/poller/tests/`:
+- **67 passing tests** across test files in `apps/poller/tests/`:
   - **`test_views.py` (36):**
     - `PollListViewTests` (2) — list accessibility, content
     - `PollDetailViewTests` (1) — detail accessibility
@@ -596,7 +606,7 @@ uv run pytest apps/poller/tests/test_views.py -v -k "not test_poll_vote_count"
     - `TemporalPollingTests` (11) — scheduled/timed/ongoing/mutable, dynamic tally, aggregation ordering
     - `WriteInBallotTests` (7) — disabled reject, normalization coalescence, option creation, authored coalescence, mutable re-vote, serializer split, leaderboard truncation
     - `CredentialGateTests` (6) — blank gate accepts, missing credential rejects, valid credential stored, mandatory issuer bypass, whitelisted issuer, non-whitelisted rejection
-  - **`test_nostr_ingest.py` (17):**
+  - **`test_nostr_ingest.py` (18):**
     - `NostrIngestionTests` (12) — valid event, tampered ID, tampered content, wrong pubkey, poll create/update/d-tag upsert, vote create, duplicate poll/vote idempotency, numeric-content type coercion, coercion idempotency
     - `NostrIngestWebhookTests` (5) — valid poll event, valid vote event, bad JSON, missing kind, unsupported kind
   - **`test_models.py` (7):** — Poll model creation, scoping, options, vote count; Vote model creation/str
@@ -639,6 +649,6 @@ iyou_poly provides a solid foundation for decentralized polling with:
 - **Phase 1** — Temporal polling states (TIMED/SCHEDULED/ONGOING), `is_mutable` re-vote, timestamp-derived `Max(id)` aggregation, `is_current` checkpoint flag
 - **Phase 2** — Write-in ballot options with NFKC normalization, view-layer coalescence, segmented leaderboards (`core_options` / `write_in_leaderboard`), 7 write-in tests
 - **Phase 3** — Unified string-based credential gate (`required_credential_type` CharField), inline validation stub in `CastVoteAPIView`, `Vote.credential_data` storage, 3 credential gate tests, full FK→string refactor across 47 references
-- **Phase 4** — Protocol v2 temporal ledger enforcements (UNIX epoch property accessors, `is_ongoing`, serializer epoch transform, v2 error messages); inbound Nostr ingestion pipeline (strict NIP-01 BIP-340 Schnorr verification via `coincurve`, no cross-curve Ed25519 fallback; type-coercion guard for `kind`/`created_at`/`content`; tag-based fallback via `_extract_tag_values()` for iyou_wun plain-text poll content; Rust signer double-hash fix — `sign_raw()` instead of `sign()` on `k256::schnorr::SigningKey`); `nostr_event_id`/`nostr_pubkey` model fields for idempotent tracking; `NostrIngestWebhook` at `POST /api/nostr/ingest/`; gossip worker live ingest integration; 17 ingestion tests; architectural audit of credential/identity infrastructure; CORS whitelist for iyou_wun satellite (port 8001)
+- **Phase 4** — Protocol v2 temporal ledger enforcements (UNIX epoch property accessors, `is_ongoing`, serializer epoch transform, v2 error messages); inbound Nostr ingestion pipeline (strict NIP-01 BIP-340 Schnorr verification via `coincurve`, no cross-curve Ed25519 fallback; type-coercion guard for `kind`/`created_at`/`content`; tag-based fallback via `_extract_tag_values()` for iyou_wun plain-text poll content; Rust signer double-hash fix — `sign_raw()` instead of `sign()` on `k256::schnorr::SigningKey`); `nostr_event_id`/`nostr_pubkey` model fields for idempotent tracking; `NostrIngestWebhook` at `POST /api/nostr/ingest/`; gossip worker live ingest integration; 18 ingestion tests; cross-curve user attribution via `_resolve_user_by_nostr_pubkey()` — Ed25519 DID bytes ↔ secp256k1 x-only pubkey hex comparison; architectural audit of credential/identity infrastructure; CORS whitelist for iyou_wun satellite (port 8001)
 
 The architecture supports the planned features but requires refinement in federation consistency and performance optimization before production deployment.

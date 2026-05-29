@@ -21,6 +21,7 @@ from apps.poller.nostr_ingest import (
     ingest_vote_event,
     verify_nostr_event,
 )
+from apps.core.verification import _b58encode
 
 User = get_user_model()
 
@@ -208,6 +209,31 @@ class NostrIngestionTests(TestCase):
         event, _ = _make_nostr_event(kind=30023, content={"title": "Bad"})
         result = ingest_poll_event(event)
         self.assertIsNone(result)
+
+    def test_ingest_binds_to_verified_sovereign_identity(self):
+        """A poll event whose secp256k1 x-only pubkey matches the Ed25519
+        key bytes embedded in a User's ``did:key:z6M...`` username binds
+        the poll's ``created_by`` to that User instead of the ``nostr``
+        fallback."""
+        sk = coincurve.PrivateKey()
+        secret_bytes = bytes.fromhex(sk.to_hex())
+        xonly_pk = coincurve.PublicKeyXOnly.from_secret(secret_bytes)
+        secp256k1_pubkey_bytes = xonly_pk.format()
+
+        multicodec = b"\xed" + secp256k1_pubkey_bytes
+        did_username = "did:key:z" + _b58encode(multicodec)
+        user = User.objects.create_user(username=did_username)
+
+        event, _ = _make_nostr_event(
+            kind=30023,
+            content={"title": "Sovereign-Bound Poll", "options": [{"text": "A"}]},
+            private_key=sk,
+        )
+
+        poll = ingest_poll_event(event)
+        self.assertIsNotNone(poll)
+        self.assertEqual(poll.created_by.id, user.id)
+        self.assertEqual(poll.created_by.username, did_username)
 
     # ── Vote ingestion ───────────────────────────────────────────────────
 
