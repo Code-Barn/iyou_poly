@@ -17,8 +17,6 @@ from typing import Any
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from cryptography.hazmat.primitives.asymmetric import ed25519
-
 import coincurve
 
 from django.contrib.auth import get_user_model
@@ -78,8 +76,8 @@ def canonical_serialize_event(event: dict[str, Any]) -> bytes:
     serialized_array = [
         0,
         event.get("pubkey"),
-        int(event.get("created_at")),
-        int(event.get("kind")),
+        event["created_at"],
+        event["kind"],
         event.get("tags", []),
         event.get("content", ""),
     ]
@@ -96,67 +94,46 @@ def canonical_serialize_event(event: dict[str, Any]) -> bytes:
 
 
 def verify_nostr_event(event: dict[str, Any]) -> bool:
-    """Verify a Nostr event envelope, trying NIP-01 Schnorr then Ed25519.
+    """Verify a Nostr event envelope using strict NIP-01 Schnorr (BIP-340).
 
-    Schnorr (BIP-340) verification re-computes the SHA-256 event ID from the
-    canonical serialisation and validates the 64-byte ``sig`` against the
-    x-only ``pubkey``.
-
-    If Schnorr fails or raises, falls back to Ed25519 verification on the same
-    canonical serialisation bytes — this accommodates mesh signatures produced
-    by the enclave's native Ed25519 platform.
+    Performs secp256k1 Schnorr signature verification against the canonical
+    serialisation of the event.  If the computed event ID does not match
+    ``event["id"]``, or if ``coincurve`` rejects the signature, the event is
+    rejected — no cross-curve Ed25519 fallback is attempted.
     """
+    # Normalise types that may arrive as JSON numbers from Rust/JS senders
+    # to ensure the canonical byte array matches what the signer produced.
+    event["kind"] = int(event["kind"])
+    event["created_at"] = int(event["created_at"])
+    event["content"] = str(event["content"])
+
     try:
         serialized_bytes = canonical_serialize_event(event)
-        computed_id = hashlib.sha256(serialized_bytes).hexdigest()
-        if computed_id != event.get("id"):
-            print(f"[SCHNORR_DIAG] computed_id != event[id]")
-            print(f"[SCHNORR_DIAG] computed:  {computed_id}")
-            print(f"[SCHNORR_DIAG] event[id]: {event.get('id')}")
-            return False
+        computed_id_hex = hashlib.sha256(serialized_bytes).hexdigest().lower()
+    except Exception as exc:
+        logger.debug("Canonical serialization failed: %s", exc)
+        return False
 
-        pubkey = coincurve.PublicKeyXOnly(_decode_field(event["pubkey"]))
-        if pubkey.verify(
-            _decode_field(event["sig"]),
-            _decode_field(computed_id),
-        ):
+    pubkey_raw = event.get("pubkey", "")
+    sig_raw = event.get("sig", "")
+    incoming_id = event.get("id", "")
+
+    if incoming_id != computed_id_hex:
+        logger.debug("Event ID mismatch — rejecting")
+        return False
+
+    try:
+        pubkey_bytes = _decode_field(pubkey_raw)
+        sig_bytes = _decode_field(sig_raw)
+        msg_bytes = _decode_field(computed_id_hex)
+
+        pubkey = coincurve.PublicKeyXOnly(pubkey_bytes)
+        if pubkey.verify(sig_bytes, msg_bytes):
             return True
     except Exception as exc:
-        logger.debug("Nostr Schnorr verification failed, trying Ed25519 fallback: %s", exc)
+        logger.debug("Schnorr signature verification failed: %s", exc)
 
-    # Fallback — Ed25519 (mesh signatures)
-    try:
-        event_id_hex = event.get("id")
-        sig_hex = event.get("sig")
-        pubkey_hex = event.get("pubkey")
-
-        if not all([event_id_hex, sig_hex, pubkey_hex]):
-            print("[ED25519_DIAG] Missing one or more required fields (id/sig/pubkey)")
-            return False
-
-        print("=" * 80)
-        print(f"[ED25519_DIAG] event_id_hex ({len(event_id_hex)} chars): {event_id_hex}")
-        print(f"[ED25519_DIAG] pubkey_hex  ({len(pubkey_hex)} chars):  {pubkey_hex}")
-        print(f"[ED25519_DIAG] sig_hex     ({len(sig_hex)} chars):     {sig_hex}")
-
-        msg_bytes = _decode_field(event_id_hex)
-        sig_bytes = _decode_field(sig_hex)
-        vk_bytes = _decode_field(pubkey_hex)
-
-        print(f"[ED25519_DIAG] msg_bytes (len={len(msg_bytes)}): {msg_bytes.hex()}")
-        print(f"[ED25519_DIAG] sig_bytes (len={len(sig_bytes)}): {sig_bytes.hex()}")
-        print(f"[ED25519_DIAG] vk_bytes  (len={len(vk_bytes)}):  {vk_bytes.hex()}")
-
-        verifying_key = ed25519.Ed25519PublicKey.from_public_bytes(vk_bytes)
-        verifying_key.verify(sig_bytes, msg_bytes)
-
-        print("[ED25519_DIAG] VERIFICATION PASSED")
-        logger.debug("Ed25519 fallback — signature verified against raw event ID bytes")
-        return True
-    except Exception as exc:
-        print(f"[ED25519_DIAG] EXCEPTION: {type(exc).__name__}: {exc}")
-        logger.debug("Ed25519 fallback validation failed: %s", exc)
-        return False
+    return False
 
 
 # ── Poll ingestion (kind:30023) ──────────────────────────────────────────────
@@ -168,6 +145,11 @@ def _extract_d_tag_value(tags: list[list[str]]) -> str | None:
         if len(tag) >= 2 and tag[0] == "d":
             return tag[1]
     return None
+
+
+def _extract_tag_values(tags: list[list[str]], key: str) -> list[str]:
+    """Return all values for tags with the given key name."""
+    return [tag[1] for tag in tags if len(tag) >= 2 and tag[0] == key]
 
 
 def _parse_poll_id_from_d_tag(d_tag: str) -> int | None:
@@ -192,33 +174,54 @@ def ingest_poll_event(event: dict[str, Any]) -> Poll | None:
         logger.warning("Ignoring event kind %s — expected 30023", event.get("kind"))
         return None
 
+    # Content may be JSON (legacy) or plain text (iyou_wun tags-based format).
+    # Fall back to extracting poll metadata from the tags array.
+    raw_content = event.get("content", "")
+    tags = event.get("tags", [])
     try:
-        content = json.loads(event.get("content", "{}"))
+        content = json.loads(raw_content) if raw_content.strip() else {}
     except json.JSONDecodeError:
-        logger.warning("Ignoring poll event %s — unparseable content", event.get("id", "")[:16])
-        return None
+        content = None
 
-    title = content.get("title", "").strip()
+    if content is None:
+        title_list = _extract_tag_values(tags, "title")
+        title = title_list[0].strip() if title_list else ""
+    else:
+        title = content.get("title", "").strip()
+
     if not title:
         logger.warning("Ignoring poll event %s — missing title", event.get("id", "")[:16])
         return None
 
     # Resolve target poll ID from the replaceable d-tag
-    tags = event.get("tags", [])
     d_tag = _extract_d_tag_value(tags)
     poll_id = _parse_poll_id_from_d_tag(d_tag) if d_tag else None
 
     nostr_user = _get_nostr_system_user()
 
-    defaults = {
-        "title": title,
-        "description": content.get("description", ""),
-        "poll_type": content.get("poll_type", PollType.PUBLIC),
-        "is_active": content.get("is_active", True),
-        "is_proposal": content.get("is_proposal", False),
-        "nostr_event_id": event.get("id"),
-        "nostr_pubkey": event.get("pubkey", ""),
-    }
+    if content is None:
+        defaults = {
+            "title": title,
+            "description": raw_content,
+            "poll_type": PollType.PUBLIC,
+            "is_active": True,
+            "is_proposal": False,
+            "nostr_event_id": event.get("id"),
+            "nostr_pubkey": event.get("pubkey", ""),
+        }
+        option_texts = _extract_tag_values(tags, "option")
+    else:
+        defaults = {
+            "title": title,
+            "description": content.get("description", ""),
+            "poll_type": content.get("poll_type", PollType.PUBLIC),
+            "is_active": content.get("is_active", True),
+            "is_proposal": content.get("is_proposal", False),
+            "nostr_event_id": event.get("id"),
+            "nostr_pubkey": event.get("pubkey", ""),
+        }
+        option_texts = content.get("options", [])
+
     create_defaults = {**defaults, "created_by": nostr_user}
 
     if poll_id is not None:
@@ -237,19 +240,17 @@ def ingest_poll_event(event: dict[str, Any]) -> Poll | None:
         poll = Poll.objects.create(**create_defaults)
         logger.info("Created poll %d from Nostr event %s (no d-tag)", poll.id, event.get("id", "")[:16])
 
-    # Ingest options from content if present
-    options_data = content.get("options", [])
-    if options_data:
+    # Ingest options from content/tags if present
+    if option_texts:
         existing_texts = set(
             PollOption.objects.filter(poll=poll).values_list("text", flat=True)
         )
-        for opt in options_data:
-            text = opt.get("text", "").strip()
+        for opt in option_texts:
+            text = (opt.strip() if isinstance(opt, str) else opt.get("text", "").strip())
             if text and text not in existing_texts:
                 PollOption.objects.create(
                     poll=poll,
                     text=text,
-                    votes=opt.get("votes", 0),
                 )
                 existing_texts.add(text)
 

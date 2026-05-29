@@ -75,7 +75,7 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 - ✅ Nostr event ID tracking (`nostr_event_id` on Poll+Vote, `nostr_pubkey` on Poll) for unique idempotent ingestion — Phase 4
 - ✅ `NostrIngestWebhook` at `POST /api/nostr/ingest/` — CSRF-exempt, Schnorr-verified inbound event relay — Phase 4
 - ✅ Gossip worker live ingest integration (calls `ingest_poll_event` / `ingest_vote_event` from subscription loop) — Phase 4
-- ✅ Ed25519 signature verification fallback in `verify_nostr_event` — Schnorr-first, Ed25519 fallback for mesh signatures. Verifies against raw event ID bytes (`bytes.fromhex(event['id'])`), bypassing JSON serialization variations — Phase 4
+- ✅ Strict NIP-01 BIP-340 Schnorr verification only in `verify_nostr_event` — 32-byte x-only pubkey via `coincurve.PublicKeyXOnly`, no cross-curve Ed25519 fallback. Type-coercion guard normalises `kind`/`created_at`/`content` before canonical serialisation. Tag-based fallback in `ingest_poll_event()` via `_extract_tag_values()` handles iyou_wun clients that send poll metadata as tags and content as plain text — Phase 4
 - ✅ `_decode_field()` helper in `nostr_ingest.py` — accepts hex or standard Base64 for `id`, `sig`, `pubkey` fields, tolerating browser-side Base64→hex conversion gaps — Phase 4
 - ✅ `NostrEventSerializer` in `apps/poller/serializers.py` — validates NIP-01 event structure (`id`, `pubkey`, `created_at`, `kind`, `tags`, `content`, `sig`) before ingestion — Phase 4
 - ✅ CORS whitelist configured (`CORS_ALLOWED_ORIGINS` for port 8001 iyou_wun satellite) — Phase 4
@@ -196,7 +196,7 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
 
 **Nostr Integration (Phase 4):**
 - `apps/poller/nostr.py` — Outbound Schnorr-secp256k1 event construction, relay publish via `websockets` (kind:30023 polls, kind:1111 vote envelopes)
-- `apps/poller/nostr_ingest.py` — Inbound NIP-01 Schnorr signature verification (primary) with Ed25519 fallback for mesh signatures; poll upsert (by `d` tag), vote ingestion (by `a` tag), idempotent duplicate detection via `nostr_event_id` unique constraint
+- `apps/poller/nostr_ingest.py` — Inbound NIP-01 BIP-340 Schnorr verification (strict, no Ed25519 fallback) with type-coercion guard; poll upsert (by `d` tag) with tag-based fallback from `_extract_tag_values()` for iyou_wun plain-text content; vote ingestion (by `a` tag); idempotent duplicate detection via `nostr_event_id` unique constraint
 - Instance keypair loaded from `NOSTR_PRIVATE_KEY` env var or generated ephemerally
 - Gossip worker (`gossip_worker.py`) — async Nostr subscription loop calling live `ingest_poll_event` / `ingest_vote_event` on received events
 
@@ -492,11 +492,14 @@ iyou_poly delegates cryptographic **signing** (operations requiring private keys
    - Trade-off: No runtime credential schema validation; relies on client to provide well-formed `credential` payload
 
 9. **Nostr Inbound Ingestion (Phase 4):**
-   - Two crypto domains: secp256k1/Schnorr for Nostr transport layer (NIP-01 signature verification); Ed25519 for application-layer identity (vote signature)
+   - Two crypto domains: secp256k1/Schnorr for Nostr transport layer (NIP-01 BIP-340 signature verification); Ed25519 for application-layer identity (vote signature)
+   - Verification uses `coincurve.PublicKeyXOnly` exclusively — 32-byte x-only pubkey, no cross-curve Ed25519 fallback
+   - Type-coercion guard at top of `verify_nostr_event()` normalises `kind` (int), `created_at` (int), `content` (str) before canonical serialisation to tolerate Rust/JS numeric type variance
    - Idempotency via DB unique constraint on `nostr_event_id` — `IntegrityError` caught in `transaction.atomic()` block for clean rollback
    - Poll upsert by `d` tag (`poll:{id}` maps to local primary key); no d-tag → new poll created
    - Vote ingestion by `a` tag (`30023:poll:{id}` resolves to local poll FK)
-    - Trade-off: Schnorr verification requires `coincurve` library; Ed25519 fallback requires `cryptography` (already present for vote verification)
+   - Tag-based fallback in `ingest_poll_event()` via `_extract_tag_values()` — when `content` is plain text (iyou_wun format), poll metadata (title, options, fidelity_min, expires) is extracted from tags; raw `content` used as description
+   - Trade-off: Rust `k256::schnorr::SigningKey::sign()` (from the `Signer` trait) applies an extra SHA-256 hash on top of the caller's digest (`try_sign_digest(Sha256::new_with_prefix(msg))`). The iyou_home signer must call `sign_raw(&event_hash, &Default::default())` instead to sign the 32-byte NIP-01 event hash directly. Python-side verification via `coincurve` applies the standard BIP-340 tagged hash internally.
 
 10. **Protocol v2 Temporal Ledger Enforcements (Phase 4):**
     - `DateTimeField` preserved in DB; UNIX epoch seconds exposed via computed `starts_at_unix`/`ends_at_unix` properties + serializer read-only fields
@@ -593,8 +596,8 @@ uv run pytest apps/poller/tests/test_views.py -v -k "not test_poll_vote_count"
     - `TemporalPollingTests` (11) — scheduled/timed/ongoing/mutable, dynamic tally, aggregation ordering
     - `WriteInBallotTests` (7) — disabled reject, normalization coalescence, option creation, authored coalescence, mutable re-vote, serializer split, leaderboard truncation
     - `CredentialGateTests` (6) — blank gate accepts, missing credential rejects, valid credential stored, mandatory issuer bypass, whitelisted issuer, non-whitelisted rejection
-  - **`test_nostr_ingest.py` (15):**
-    - `NostrIngestionTests` (10) — valid event, tampered ID, tampered content, wrong pubkey, poll create/update/d-tag upsert, vote create, duplicate poll/vote idempotency
+  - **`test_nostr_ingest.py` (17):**
+    - `NostrIngestionTests` (12) — valid event, tampered ID, tampered content, wrong pubkey, poll create/update/d-tag upsert, vote create, duplicate poll/vote idempotency, numeric-content type coercion, coercion idempotency
     - `NostrIngestWebhookTests` (5) — valid poll event, valid vote event, bad JSON, missing kind, unsupported kind
   - **`test_models.py` (7):** — Poll model creation, scoping, options, vote count; Vote model creation/str
   - **`test_vp_credential_gate.py` (7):** — Full VP handshake, legacy bare VC, bad holder sig, missing challenge/fields, wrong challenge, challenge consumption
@@ -618,11 +621,11 @@ iyou_poly provides a solid foundation for decentralized polling with:
 - Segmented leaderboards (`core_options` / `write_in_leaderboard`) with configurable display limits
 - Unified string-based credential gate with inline validation
 - Protocol v2 temporal ledger enforcements (UNIX epoch accessors, `is_ongoing`, v2 error messages)
-- Inbound Nostr ingestion pipeline (NIP-01 Schnorr verification + Ed25519 fallback, poll upsert by d-tag, idempotent vote ingest by a-tag)
+- Inbound Nostr ingestion pipeline (strict NIP-01 BIP-340 Schnorr verification via `coincurve`, poll upsert by d-tag with tag-based fallback, idempotent vote ingest by a-tag)
 - `NostrIngestWebhook` at `POST /api/nostr/ingest/` for external relay push
 - Gossip worker live ingest integration
 - CORS whitelist for iyou_wun satellite (port 8001)
-- 66 passing tests across views + nostr ingestion + VP credential gate + revocation test suites
+- 68 passing tests across views + nostr ingestion + VP credential gate + revocation test suites
 
 **Key Focus Areas for Next Phase:**
 1. Fix `DataSyncLog` F() expression bug in `apps/core/signals.py:63` (affects all template-based vote tests)
@@ -636,6 +639,6 @@ iyou_poly provides a solid foundation for decentralized polling with:
 - **Phase 1** — Temporal polling states (TIMED/SCHEDULED/ONGOING), `is_mutable` re-vote, timestamp-derived `Max(id)` aggregation, `is_current` checkpoint flag
 - **Phase 2** — Write-in ballot options with NFKC normalization, view-layer coalescence, segmented leaderboards (`core_options` / `write_in_leaderboard`), 7 write-in tests
 - **Phase 3** — Unified string-based credential gate (`required_credential_type` CharField), inline validation stub in `CastVoteAPIView`, `Vote.credential_data` storage, 3 credential gate tests, full FK→string refactor across 47 references
-- **Phase 4** — Protocol v2 temporal ledger enforcements (UNIX epoch property accessors, `is_ongoing`, serializer epoch transform, v2 error messages); inbound Nostr ingestion pipeline (NIP-01 Schnorr verification with Ed25519 fallback, `nostr_ingest.py`, poll upsert by d-tag, idempotent vote ingestion by a-tag); `nostr_event_id`/`nostr_pubkey` model fields for idempotent tracking; `NostrIngestWebhook` at `POST /api/nostr/ingest/`; gossip worker live ingest integration; 15 new ingestion tests; architectural audit of credential/identity infrastructure; CORS whitelist for iyou_wun satellite (port 8001)
+- **Phase 4** — Protocol v2 temporal ledger enforcements (UNIX epoch property accessors, `is_ongoing`, serializer epoch transform, v2 error messages); inbound Nostr ingestion pipeline (strict NIP-01 BIP-340 Schnorr verification via `coincurve`, no cross-curve Ed25519 fallback; type-coercion guard for `kind`/`created_at`/`content`; tag-based fallback via `_extract_tag_values()` for iyou_wun plain-text poll content; Rust signer double-hash fix — `sign_raw()` instead of `sign()` on `k256::schnorr::SigningKey`); `nostr_event_id`/`nostr_pubkey` model fields for idempotent tracking; `NostrIngestWebhook` at `POST /api/nostr/ingest/`; gossip worker live ingest integration; 17 ingestion tests; architectural audit of credential/identity infrastructure; CORS whitelist for iyou_wun satellite (port 8001)
 
 The architecture supports the planned features but requires refinement in federation consistency and performance optimization before production deployment.

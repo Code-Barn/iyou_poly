@@ -15,7 +15,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.poller.models import Poll, PollOption, PollType, TemporalPollType, Vote
-from apps.poller.nostr_ingest import ingest_poll_event, ingest_vote_event, verify_nostr_event
+from apps.poller.nostr_ingest import (
+    canonical_serialize_event,
+    ingest_poll_event,
+    ingest_vote_event,
+    verify_nostr_event,
+)
 
 User = get_user_model()
 
@@ -104,6 +109,54 @@ class NostrIngestionTests(TestCase):
         wrong_xonly = coincurve.PublicKeyXOnly.from_secret(wrong_secret)
         event["pubkey"] = wrong_xonly.format().hex()
         self.assertFalse(verify_nostr_event(event))
+
+    def test_verify_coerces_numeric_content(self):
+        """An event with numeric content passes after type coercion.
+
+        Regression test: if ``content`` arrives as a JSON number (``123``)
+        instead of a string (``"123"``), the coercion guard in
+        ``verify_nostr_event`` casts it to ``str()`` before canonical
+        serialisation so the computed hash matches the signer's intent.
+        """
+        sk = coincurve.PrivateKey()
+        secret = bytes.fromhex(sk.to_hex())
+        xonly_pk = coincurve.PublicKeyXOnly.from_secret(secret)
+        pubkey_hex = xonly_pk.format().hex()
+
+        import hashlib
+        import time
+        now = int(time.time())
+
+        # Sign over content as the string "123" (the correct NIP-01 encoding)
+        serialized = json.dumps(
+            [0, pubkey_hex, now, 30023, [], "123"],
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        event_id = hashlib.sha256(serialized.encode()).hexdigest()
+        sig = sk.sign_schnorr(bytes.fromhex(event_id)).hex()
+
+        # Feed the event with content as int — simulates a JSON wire-format slip
+        event = {
+            "id": event_id,
+            "pubkey": pubkey_hex,
+            "created_at": now,
+            "kind": 30023,
+            "tags": [],
+            "content": 123,  # <-- number, not string
+            "sig": sig,
+        }
+        self.assertTrue(verify_nostr_event(event))
+        # Guard mutates the dict in-place
+        self.assertIsInstance(event["content"], str)
+        self.assertEqual(event["content"], "123")
+
+    def test_verify_coercion_is_idempotent(self):
+        """Passing already-string content through the guard is a no-op."""
+        event, _ = _make_nostr_event(kind=30023, content={"title": "Test"})
+        original_content = event["content"]
+        self.assertTrue(verify_nostr_event(event))
+        self.assertEqual(event["content"], original_content)
 
     # ── Poll ingestion ───────────────────────────────────────────────────
 
