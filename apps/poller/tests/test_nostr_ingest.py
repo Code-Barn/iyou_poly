@@ -32,8 +32,17 @@ def _make_nostr_event(
     d_tag: str | None = None,
     a_tag: str | None = None,
     private_key: coincurve.PrivateKey | None = None,
+    created_at: int | None = None,
 ) -> tuple[dict, coincurve.PrivateKey]:
     """Build and sign a Nostr event for testing.
+
+    Args:
+        kind: Nostr event kind (default 30023).
+        content: Event content dict.
+        d_tag: Optional ``d`` tag value.
+        a_tag: Optional ``a`` tag value.
+        private_key: Key to sign with (generated fresh if not given).
+        created_at: Explicit Unix timestamp (defaults to ``time.time()``).
 
     Returns ``(event_dict, private_key)``.
     """
@@ -53,7 +62,7 @@ def _make_nostr_event(
     if a_tag is not None:
         tags.append(["a", a_tag])
 
-    now = int(time.time())
+    now = created_at if created_at is not None else int(time.time())
     serialized = json.dumps(
         [0, pubkey_hex, now, kind, tags, json.dumps(content or {})],
         separators=(",", ":"),
@@ -234,6 +243,53 @@ class NostrIngestionTests(TestCase):
         self.assertIsNotNone(poll)
         self.assertEqual(poll.created_by.id, user.id)
         self.assertEqual(poll.created_by.username, did_username)
+
+    # ── Clock-skew resilience ────────────────────────────────────────────
+
+    def test_ingest_tolerates_acceptable_clock_skew(self):
+        """An event timestamped up to 60s in the future (within the 900s
+        grace window) is ingested successfully. A vote event timestamped
+        60s past the poll's close is also accepted."""
+        import time
+
+        now = int(time.time())
+
+        # ── Future-dated poll event (within grace) ───────────────────────
+        future_event, _ = _make_nostr_event(
+            kind=30023,
+            content={"title": "Future Poll", "options": [{"text": "A"}]},
+            created_at=now + 60,
+        )
+        self.assertTrue(verify_nostr_event(future_event))
+        poll = ingest_poll_event(future_event)
+        self.assertIsNotNone(poll)
+        self.assertEqual(poll.title, "Future Poll")
+
+        # ── Vote event just past poll ends_at (within grace) ──────────
+        ends_at_dt = timezone.now() - timezone.timedelta(minutes=5)
+        poll_with_end = Poll.objects.create(
+            title="Closing Poll",
+            created_by=self.user,
+            poll_type=PollType.PUBLIC,
+            temporal_type=TemporalPollType.TIMED,
+            ends_at=ends_at_dt,
+        )
+        option = PollOption.objects.create(poll=poll_with_end, text="Yes")
+
+        past_event, _ = _make_nostr_event(
+            kind=1112,
+            created_at=int(ends_at_dt.timestamp()) + 60,
+            content={
+                "poll_id": poll_with_end.id,
+                "option_id": option.id,
+                "voter_did": "did:key:z6Mskew",
+            },
+            a_tag=f"30023:poll:{poll_with_end.id}",
+        )
+        vote = ingest_vote_event(past_event)
+        self.assertIsNotNone(vote)
+        self.assertEqual(vote.poll_id, poll_with_end.id)
+        self.assertEqual(vote.option_id, option.id)
 
     # ── Vote ingestion ───────────────────────────────────────────────────
 

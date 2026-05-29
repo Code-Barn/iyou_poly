@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Any
 
@@ -27,6 +28,9 @@ from apps.core.verification import _pubkey_from_did
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
+
+# Temporal resilience: Allow up to 15 minutes of clock drift / network latency
+CLOCK_SKEW_GRACE_SECONDS = 900
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,6 +128,13 @@ def verify_nostr_event(event: dict[str, Any]) -> bool:
     event["kind"] = int(event["kind"])
     event["created_at"] = int(event["created_at"])
     event["content"] = str(event["content"])
+
+    # Reject events whose timestamp is unreasonably far in the future,
+    # while allowing a grace window for client clock skew.
+    now_ts = int(time.time())
+    if event["created_at"] > (now_ts + CLOCK_SKEW_GRACE_SECONDS):
+        logger.debug("Event timestamp too far in the future — rejecting")
+        return False
 
     try:
         serialized_bytes = canonical_serialize_event(event)
@@ -334,8 +345,22 @@ def ingest_vote_event(event: dict[str, Any]) -> Vote | None:
     try:
         poll = Poll.objects.get(id=poll_id, is_active=True)
     except Poll.DoesNotExist:
-        logger.warning("Ignoring vote event %s — poll %s not found or inactive", event.get("id", "")[:16], poll_id)
+        logger.warning("Ignoring vote event %s — poll %s not found or inactive", event.get("id")[:16], poll_id)
         return None
+
+    # Reject votes whose timestamp is unreasonably far past the poll's end,
+    # while allowing a grace window for client clock skew.
+    if poll.ends_at is not None:
+        if event["created_at"] > (int(poll.ends_at.timestamp()) + CLOCK_SKEW_GRACE_SECONDS):
+            logger.warning(
+                "Ignoring vote event %s — poll %s has already concluded (created_at=%d, ends_at=%d, grace=%ds)",
+                event.get("id")[:16],
+                poll_id,
+                event["created_at"],
+                int(poll.ends_at.timestamp()),
+                CLOCK_SKEW_GRACE_SECONDS,
+            )
+            return None
 
     try:
         option = PollOption.objects.get(id=option_id, poll=poll)
