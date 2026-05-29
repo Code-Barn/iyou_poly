@@ -27,6 +27,7 @@ Within the Omni-Social infrastructure, the protocol functions across a dual-phas
 │  signing    │ Scope system   │ Nostr event signing       │
 │            │ Federation DM  │ Local verification         │
 │            │ Embed widget   │                           │
+│            │ Nostr ingestion │                           │
 └────────────┴────────────────┴───────────────────────────┘
 ```
 
@@ -49,8 +50,9 @@ Within the Omni-Social infrastructure, the protocol functions across a dual-phas
 | **Sovereign Key Custody** | `iyou_home` | Hardware/Enclave (`did_rust`) | Private keys remain strictly sealed inside the client vault. | 🔧 Delegated |
 | **Payload Signing** | `iyou_home` | Local WebSocket (`ws://127.0.0.1:9001`) | Generates cryptographically signed envelopes upon explicit user approval. | 🔧 Delegated |
 | **Social Discovery / UI** | `iyou_wun` | Web presentation / Browser | Renders feeds, manages interactive voting states, handles fallback Auditor Mode. | 🔧 Delegated |
-| **Stateless Calculation** | `iyou_poly` | Headless REST API (`X-Iyou-Wun-Proxy`) | Tallies records, verifies signature math, tracks aggregate data inputs. | ✅ Implemented |
+| **Stateless Calculation** | `iyou_poly` | Headless REST API | Tallies records, verifies signature math, tracks aggregate data inputs. | ✅ Implemented |
 | **Federation Transport** | Nostr Network | Relays (NIP-01 WebSockets) | Propagates definitions and verified votes globally across the peer-to-peer mesh. | ✅ Implemented |
+| **Nostr Inbound Ingestion** | `iyou_poly` | REST webhook + Gossip Worker | Accepts external Nostr events (kind:30023, 1111, 1112) via `POST /api/nostr/ingest/` or long-lived relay subscriptions. Validates NIP-01 Schnorr signatures, upserts polls/ingests votes. | ✅ Implemented |
 | **OIDC authentication** | `iyou_idp` | OIDC Protocol | Federated identity provider at `127.0.0.1:8000`. | 🔧 Delegated |
 | **User session & auth backend** | `iyou_poly` | Django `mozilla-django-oidc` | Session management, claims mapping. | ✅ Implemented |
 | **Poll CRUD & voting** | `iyou_poly` | Django ORM + DRF | Full lifecycle: create, vote, tally, audit. | ✅ Implemented |
@@ -62,9 +64,9 @@ Within the Omni-Social infrastructure, the protocol functions across a dual-phas
 | **Cryptographic signing (`did_rust`)** | `iyou_home` | WebSocket bridge | All signing delegated; `iyou_poly` never holds private keys. | 🔧 Delegated |
 | **Key generation & storage** | `iyou_home` | Hardware/Enclave | Keys never leave the client. | 🔧 Delegated |
 | **Verifiable Credential signing** | `iyou_home` | WebSocket `sign_credential` | Bridge stamps `proof` block. Pending bridge endpoint — marked `xfail` in tests. | 🔧 Delegated |
-| **Vote DID-signature verification** | `iyou_poly` | Pure-Python Ed25519 (`apps/core/verification.py`) | True mathematical verification via `did:key:z6M...` public key extraction. | ✅ Implemented |
+| **Vote DID-signature verification** | `iyou_poly` | Pure-Python Ed25519 (`apps/core/verification.py`) | True mathematical verification via `did:key:z6M...` / `z2D...` public key extraction. Supports both 1-byte (`0xed`) and 2-byte (`0xed 0x01`) multicodec prefixes. | ✅ Implemented |
 | **Blossom/IPFS ledger anchoring** | — | — | Finalized ledger/Merkle root publication. Not implemented. | 🚧 Planned |
-| **Nostr event broadcast** | `iyou_poly` | NIP-01 WebSockets | Poll definitions (kind:30023) and vote envelopes (kind:1112) published to relays. | ✅ Implemented |
+| **Nostr event broadcast** | `iyou_poly` | NIP-01 WebSockets | Poll definitions (kind:30023) and vote envelopes (kind:1111) published to relays. | ✅ Implemented |
 | **Real-time updates (WebSocket/SSE)** | — | — | No real-time subscription layer yet. | 🚧 Planned |
 
 ---
@@ -73,11 +75,14 @@ Within the Omni-Social infrastructure, the protocol functions across a dual-phas
 
 ### 3.1 Voter Identity Suffix
 
-Voter identities must be formatted as standardized W3C Decentralized Identifiers utilizing the `did:key` Ed25519 multicodec standard:
+Voter identities must be formatted as standardized W3C Decentralized Identifiers utilizing the `did:key` multicodec standard. Two multicodec variants are accepted:
 
-```
-did:key:z6M[Base58-encoded multicodec public key payload]
-```
+| Format | Multicodec | Typical Origin |
+|--------|-----------|----------------|
+| `did:key:z6M[Base58...]` | 2-byte `0xed 0x01` | Native Ed25519 keypair (`did_rust` default) |
+| `did:key:z2D[Base58...]` | 1-byte `0xed` | Cross-curve secp256k1 → Ed25519 wrapping |
+
+The `_pubkey_from_did()` function in `apps/core/verification.py` handles both variants transparently.
 
 ### 3.2 Pure Mathematical Signature Verification
 
@@ -87,20 +92,21 @@ The implementation lives in `apps/core/verification.py:verify_vote_signature()`.
 
 1. Strips the `did:key:` prefix and `z` multibase marker from the DID.
 2. Base58btc-decodes the remaining payload.
-3. Validates the `\xed` multicodec prefix (Ed25519 public key).
+3. Validates the `\xed` multicodec prefix, accepting both 1-byte (`0xed`) and 2-byte (`0xed 0x01`) encodings.
 4. Extracts the 32-byte public key and loads it as an `Ed25519PublicKey`.
-5. Verifies the hex signature against the canonical JSON serialisation of the vote envelope.
-6. Returns `True` or `False` with no network calls.
+5. Hashes the canonical JSON serialisation of the vote envelope to produce a 32-byte event ID.
+6. Verifies the hex Ed25519 signature against that hash.
+7. Returns `True` or `False` with no network calls.
 
-### 3.3 Sybil Resistance Constraint
+### 3.3 Sybil Resistance
 
-The database-layer unique boundary must remain strictly tied to a single voter instance per poll definition:
+There is **no** database-level `unique_together` constraint on `(poll, voter_did)`. All deduplication is enforced at the application view layer:
 
-```python
-unique_together = ("poll", "voter_did")
-```
+- **Idempotent duplicate (same signature):** If `Vote.objects.filter(poll=poll, voter_did=voter_did, is_current=True).exists()` with matching `signature`, the request resolves as a graceful success (201 Created) with `{"duplicate": true}`.
+- **Conflicting re-vote (immutable poll):** If the poll is non-mutable (`is_mutable=False`), a second vote with a different signature is rejected (400 Bad Request).
+- **Allowed re-vote (mutable poll):** For ONGOING polls with `is_mutable=True`, a re-vote marks the previous `is_current=False` record as historical and creates a fresh record.
 
-Deduplication is enforced at the application view layer. If an incoming vote matches an existing voter/poll record and the signature aligns perfectly, it resolves as a graceful transaction duplicate-success (201 Created). If choice or signature properties conflict, the transaction is rejected instantly (400/401 Bad Request).
+See `apps/poller/views.py:CastVoteAPIView` — lines 1157–1177.
 
 ### 3.4 OIDC Authentication & Session Model
 
@@ -128,47 +134,70 @@ To ensure external Nostr relays pass, index, and cache data cleanly without caus
 
 Used to define and broadcast a poll's rules, configuration boundaries, and geographic scope requirements.
 
+**Standard broadcast format** (produced by `make_poll_event()` in `apps/poller/nostr.py`):
+
 ```json
 {
   "id": "canonical_poll_event_id_hex",
-  "pubkey": "creator_nostr_public_key",
+  "pubkey": "instance_nostr_xonly_pubkey_hex",
   "kind": 30023,
   "created_at": 1716500000,
   "tags": [
-    ["d", "poll:unique_poll_id_uuid"],
-    ["title", "The Regional Governance Split Survey"],
-    ["option", "opt_01", "Option A: Maintain Shared Infrastructure"],
-    ["option", "opt_02", "Option B: Establish Independent Node Sync"],
+    ["d", "poll:42"],
     ["geohash", "dp3w"],
-    ["org", "county-clerk-office"],
-    ["expires", "1719100000"]
+    ["rule", "investor_share", "1.0"],
+    ["p", "Option A: Maintain Shared Infrastructure"],
+    ["p", "Option B: Establish Independent Node Sync"],
+    ["scope_type", "Regional"],
+    ["credential_type", "residence_proof"]
   ],
-  "content": "Detailed markdown explanation of the ballot question and systemic choices goes here.",
+  "content": "{\"title\":\"The Regional Governance Split Survey\",\"description\":\"...\",\"poll_type\":\"public\",\"is_active\":true,\"is_proposal\":false,\"options\":[{\"text\":\"Option A...\",\"votes\":0},{\"text\":\"Option B...\",\"votes\":0}]}",
   "sig": "schnorr_signature_hex"
 }
 ```
 
-### 4.2 Nostr Kind 1112: The Governance Vote Envelope
+**Ingest fallback** (`ingest_poll_event()` in `apps/poller/nostr_ingest.py`): When `content` is **not** valid JSON (plain-text markdown from `iyou_wun`), the ingestion pipeline falls back to extracting metadata from the tags array:
 
-Used to broadcast and distribute verified vote transactions. This is kept entirely separated from standard kind:1111 nested text comment schemas.
+| Tag | Use |
+|-----|-----|
+| `["title", "..."]` | Poll title (falls back to empty string) |
+| `["option", "Option text"]` | Option list (single string per option) |
+| `["geohash", "..."]` | Required scope value |
+| `["org", "..."]` | Organization identifier |
 
-- **The Outer Frame:** Structured as a native Nostr envelope utilizing network-layer secp256k1 keys for valid relay routing and indexing.
-- **The Inner Frame (`content`):** Holds the raw, idempotent, stringified Omni-Social JSON Vote Envelope, carrying the voter's true Ed25519 `did_rust` signature identity.
+This dual-format strategy ensures both native `iyou_poly` broadcast and third-party tooling (e.g., `iyou_wun`) can produce compatible events.
+
+### 4.2 Nostr Kind 1111: The Governance Vote Envelope
+
+Used to broadcast and distribute verified vote transactions. While the service also accepts kind:1112 for backward compatibility, the canonical broadcast kind is **1111**.
+
+**Outer frame** — standard Nostr NIP-01 envelope with secp256k1 Schnorr transport signature.
+
+**Inner frame (`content`)** — flat JSON carrying the voter's Ed25519 DID signature:
 
 ```json
 {
   "id": "transport_event_id_hex",
-  "pubkey": "carrier_or_user_nostr_pubkey",
-  "kind": 1112,
+  "pubkey": "instance_nostr_xonly_pubkey_hex",
+  "kind": 1111,
   "created_at": 1716501500,
   "tags": [
-    ["a", "30023:creator_nostr_public_key:poll:unique_poll_id_uuid"],
-    ["p", "voter_identity_did_string"]
+    ["a", "30023:poll:42"],
+    ["e", "ed25519_signature_hex_of_vote"],
+    ["p", "did:key:z6M..."]
   ],
-  "content": "{\n  \"voter_did\": \"did:key:z6M...\",\n  \"signature\": \"ed25519_hex_signature_of_envelope_bytes\",\n  \"vote_envelope\": {\n    \"poll_id\": \"unique_poll_id_uuid\",\n    \"option_id\": \"opt_01\",\n    \"timestamp\": 1716501480\n  }\n}",
+  "content": "{\n  \"poll_id\": 42,\n  \"option_id\": 7,\n  \"option_text\": \"Option A: Maintain Shared Infrastructure\",\n  \"voter_did\": \"did:key:z6M...\",\n  \"voter_ed25519_signature\": \"ed25519_hex_signature\",\n  \"timestamp\": \"2026-05-24T12:00:00+00:00\",\n  \"credential_cid\": \"\"\n}",
   "sig": "schnorr_transport_signature_hex"
 }
 ```
+
+**Key differences from v1 draft:**
+- Kind is **1111** (not 1112). Ingest accepts both 1111 and 1112.
+- Content is flat, not nested inside `vote_envelope`.
+- `option_id` is an integer `PollOption.id`, not a string code like `opt_01`.
+- `timestamp` is an ISO-8601 string, not a Unix epoch integer.
+- Tags use `["a", "30023:poll:{poll_id}"]` (no `creator_nostr_pubkey` in the a-tag).
+- The `["e"]` tag carries the Ed25519 signature for mesh-level deduplication.
 
 ### 4.3 Event Broadcast Implementation
 
@@ -177,9 +206,30 @@ Both event kinds are signed with the instance's secp256k1 keypair (via `coincurv
 - `get_instance_keypair()` — Loads or generates the instance Nostr keypair.
 - `make_event(kind, content, tags)` — Constructs and Schnorr-signs a Nostr event.
 - `make_poll_event(poll)` — Builds kind:30023 from a `Poll` model instance.
-- `make_vote_event(vote, poll_id)` — Builds kind:1112 with the Ed25519 voter signature in `content`.
+- `make_vote_event(vote, poll_id)` — Builds kind:1111 with the Ed25519 voter signature in `content`.
 - `publish_event(event)` — Broadcasts to all relays; returns list of accepting relays.
 - `subscribe_loop(relay, kinds, on_event)` — Long-lived subscription for the gossip worker.
+- `publish_poll(poll)` / `publish_vote(vote, poll_id)` — Convenience wrappers.
+
+### 4.4 Inbound Nostr Ingestion Pipeline
+
+`iyou_poly` ingests external Nostr events through two channels:
+
+**1. REST webhook** — `POST /api/nostr/ingest/` (see §8.2). Accepts a raw NIP-01 event envelope, validates via `NostrEventSerializer`, then routes to:
+
+- `ingest_poll_event(event)` — kind:30023 → upsert Poll + PollOptions
+- `ingest_vote_event(event)` — kind:1111/1112 → create Vote (idempotent on `nostr_event_id` unique constraint)
+
+**2. Gossip worker** — `python manage.py gossip_worker` (see §7.3). Long-lived async subscription to configured relays.
+
+**Validation gates:**
+- `verify_nostr_event()` — NIP-01 Schnorr (BIP-340) signature verification against the canonical `[0, pubkey, created_at, kind, tags, content]` serialisation.
+- **Type coercion** — `kind`, `created_at`, and `content` are cast to `int()`/`str()` to handle JSON number/string variability between Rust/JS senders.
+- **Clock-skew guard** — Events with `created_at` more than 900 seconds (`CLOCK_SKEW_GRACE_SECONDS`) in the future are rejected.
+- **Poll-closing guard** — Vote events referencing a concluded poll (`created_at > ends_at + 900s`) are rejected.
+- **`_decode_field()` helper** — Accepts both hex (64/128 char) and standard Base64 for `id`, `sig`, and `pubkey` fields (Tauri enclave sometimes sends Base64).
+
+**Cross-curve user resolution** — `_resolve_user_by_nostr_pubkey(pubkey_hex)` iterates local users whose `username` is a `did:key:z...` DID, extracts the Ed25519 public key from each, and compares its hex encoding to the incoming Nostr x-only pubkey. Matching users are set as `Poll.created_by`; unmatched events fall back to the `nostr` system user.
 
 ---
 
@@ -189,21 +239,22 @@ To facilitate automated ingestion from decoupled discovery portals (`iyou_wun`),
 
 ### 5.1 Request Ingestion Blueprint
 
-- **Endpoint:** `POST /api/v2/polls/{poll_id}/cast/`
-- **Mandatory Header:** `X-Iyou-Wun-Proxy: true`
-- **Payload Format:** Strict Omni-Social JSON Structure
+- **Endpoint:** `POST /api/polls/{id}/cast/`
+- **Authentication:** None (anonymous). Cryptographic signature replaces auth.
+- **Payload Format:**
 
 ```json
 {
+  "poll_id": 42,
+  "option_id": 7,
   "voter_did": "did:key:z6M...",
-  "signature": "hex_string",
-  "vote_envelope": {
-    "poll_id": "string",
-    "option_id": "string",
-    "timestamp": 1234567890
-  }
+  "signature": "ed25519_hex_signature",
+  "credential_cid": "",
+  "write_in_text": ""
 }
 ```
+
+The `vote_envelope` for signature verification is reconstructed server-side as `{"poll_id": ..., "option_id": ..., "voter_did": ..., "timestamp": "<now>"}`. The client signs this same canonical JSON before sending.
 
 ### 5.2 Deterministic Canonical Serialization Rule
 
@@ -266,7 +317,13 @@ The federation data layer exists in `apps/core/models.py`:
 
 ### 7.3 Gossip Worker
 
-`apps/poller/management/commands/gossip_worker.py` runs an async Nostr subscription loop that listens for kind:30023 (poll) and kind:1111/1112 (vote) events from all configured relays. Inbound events are logged; future iterations will upsert polls and ingest votes directly from the mesh.
+`apps/poller/management/commands/gossip_worker.py` runs an async Nostr subscription loop that listens for kind:30023 (poll) and kind:1111/1112 (vote) events from all configured relays.
+
+**Current behavior:**
+- Inbound kind:30023 events are validated via `verify_nostr_event()` and then **upserted** into the local Poll database by `ingest_poll_event()`.
+- Inbound kind:1111/1112 events are validated and **ingested** as Vote records by `ingest_vote_event()` (idempotent via `nostr_event_id` unique constraint).
+- Each event is logged to stdout with its result.
+- Runs continuously; a 30-second reconnection backoff is applied on relay failure.
 
 ### 7.4 Conflict Resolution
 
@@ -306,6 +363,7 @@ All v2 APIs use the unified response envelope:
 | POST | `/api/polls/{id}/cast/` | DRF vote casting (headless, idempotent) | `CastVoteAPIView` | ✅ v2 `{"valid": ...}` |
 | GET | `/api/polls/{id}/history/` | Vote history with signatures for audit | `get_votes` | Legacy `{"status": ...}` |
 | GET | `/api/polls/{id}/eligibility/` | Check if `voter_did` can vote | `CheckVotingEligibilityAPIView` | ✅ v2 `{"valid": ...}` |
+| POST | `/api/nostr/ingest/` | Ingest a raw Nostr event (kind:30023/1111/1112) | `NostrIngestWebhook` | ✅ v2 `{"valid": ...}` |
 
 ### 8.3 Embed Widget Endpoints
 
@@ -381,7 +439,7 @@ The following endpoints from earlier drafts do not exist in the codebase:
 |-----------------|---------|
 | `GET /api/polls/{id}/verify/` | ❌ Not implemented |
 | `GET /api/polls/{id}/rules/` | ❌ Not implemented |
-| CLI `polly-audit verify --poll-id` | ❌ Not implemented |
+| CLI `poly-audit verify --poll-id` | ❌ Not implemented |
 
 > `GET /api/polls/{id}/vote/` (standalone) does exist for HTMX voting — this is a template view, not a pure API.
 
@@ -431,7 +489,15 @@ The nav badge (`apps/core/templates/partials/_nav.html`) probes `http://127.0.0.
 
 - **Credential Verification:** `POST /api/credentials/verify/` checks issuer authorization, scope matching, expiration, and trust score.
 
-- **Ed25519 Signature Verification:** `POST /api/polls/{id}/cast/` validates the incoming signature using `apps/core/verification.py:verify_vote_signature()` — pure-Python, zero network calls.
+- **Ed25519 Signature Verification:** `POST /api/polls/{id}/cast/` validates the incoming signature using `apps/core/verification.py:verify_vote_signature()` — pure-Python, zero network calls. Supports both `z6M` (2-byte multicodec) and `z2D` (1-byte multicodec) DID prefixes.
+
+- **NIP-01 Schnorr Verification:** `verify_nostr_event()` in `apps/poller/nostr_ingest.py` validates inbound Nostr events using secp256k1 Schnorr (BIP-340), with type coercion guards and `_decode_field()` hex/Base64 tolerance.
+
+- **Clock-Skew Grace Buffer:** `CLOCK_SKEW_GRACE_SECONDS = 900` protects against:
+  - Future-dated Nostr events (rejected if `created_at > now + 900s`)
+  - Votes on recently-closed polls (accepted within 900s of `ends_at`)
+
+- **Idempotent Vote Ingestion:** `nostr_event_id` has a database-level `unique` constraint on the `Vote` model, preventing double-ingestion from relay firehoses.
 
 ### 10.2 What Is Placeholder (🚧)
 
@@ -440,6 +506,7 @@ The nav badge (`apps/core/templates/partials/_nav.html`) probes `http://127.0.0.
 - **"Verify on Desktop":** The template includes a button that fetches vote history, but the bridge handoff for local verification is not implemented.
 - **Ledger Auto-Storage:** The Merkle root is **not** automatically stored in `Poll.votes_merkle_root`. The field exists on the model but is never populated by any code.
 - **Scheduled Anchoring:** No scheduling logic exists for "every 100 votes or upon poll closure." Anchoring is a manual operation via `uv run python manage.py anchor_ledger`.
+- **`X-Iyou-Wun-Proxy` header:** The spec defines `X-Iyou-Wun-Proxy: true` as a mandatory header for headless proxy operations, but this header is not yet enforced by any view.
 
 ---
 
@@ -485,9 +552,11 @@ The nav badge (`apps/core/templates/partials/_nav.html`) probes `http://127.0.0.
 | Authentication Flow | Implicit Cookie Sessions / Forms | Headless Session-Free Proxy Handshakes |
 | API endpoints | 4 listed | 30+ actual endpoints documented |
 | Response format | No standard | `{"valid": bool, ...}` v2 envelope |
-| Vote Ingestion Kind | Reused kind:1111 (Comment Chaos) | Explicit kind:1112 (Isolated Vote Ledgers) |
+| Vote Ingestion Kind | Reused kind:1111 (Comment Chaos) | Explicit kind:1111/1112 (Isolated Vote Ledgers) |
 | Cryptographic Status | Mock Validation (`is_verified=True`) | True Mathematical Ed25519 Checking |
-| Deduplication Boundary | Database Alteration Failure | View-Layer Layered Graceful Idempotency |
+| DID Key Format | `z6M` only | `z6M` + `z2D` (cross-curve) |
+| Deduplication Boundary | Database `unique_together` | View-Layer Layered Graceful Idempotency |
+| Nostr Verification | None | NIP-01 Schnorr (BIP-340) with type coercion + clock-skew grace |
 | `/api/polls/{id}/verify/` | Listed as requirement | Removed — not implemented |
 | `/api/polls/{id}/rules/` | Listed as requirement | Removed — not implemented |
 | `did_rust` location | Implied in-repo | Explicitly delegated to `iyou_home` |
