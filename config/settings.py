@@ -206,31 +206,41 @@ SESSION_COOKIE_DOMAIN = None
 SESSION_SAVE_EVERY_REQUEST = True
 
 # OIDC Settings
-OIDC_RP_CLIENT_ID = "099120"
-OIDC_RP_CLIENT_SECRET = "59b0d3aa8f6f5ff82384c6d4502420f72688d36267added38db4d68c"
+OIDC_RP_CLIENT_ID = env.str(
+    "OIDC_RP_CLIENT_ID",
+    default="poly-satellite-client",
+)
+OIDC_RP_CLIENT_SECRET = env.str(
+    "OIDC_RP_CLIENT_SECRET",
+    default="59b0d3aa8f6f5ff82384c6d4502420f72688d36267added38db4d68c",
+)
 OIDC_RP_SIGN_ALGO = "RS256"
 OIDC_RP_VERIFY_KID = False
 
-# All OIDC endpoints use 127.0.0.1:8000 (the IdP) — configurable via env
+# Front-channel: user's browser is redirected here for login
 OIDC_OP_AUTHORIZATION_ENDPOINT = env.str(
     "OIDC_OP_AUTHORIZATION_ENDPOINT",
-    default="http://127.0.0.1:8000/openid/authorize/",
+    default="https://iyou.me/openid/authorize/",
 )
+# Back-channel: server-to-server calls stay inside the cluster
 OIDC_OP_TOKEN_ENDPOINT = env.str(
     "OIDC_OP_TOKEN_ENDPOINT",
-    default="http://127.0.0.1:8000/openid/token/",
+    default="http://iyou-idp.identity.svc.cluster.local:8000/openid/token/",
 )
 OIDC_OP_USER_ENDPOINT = env.str(
     "OIDC_OP_USER_ENDPOINT",
-    default="http://127.0.0.1:8000/openid/userinfo/",
+    default="http://iyou-idp.identity.svc.cluster.local:8000/openid/userinfo/",
 )
 OIDC_OP_JWKS_ENDPOINT = env.str(
     "OIDC_OP_JWKS_ENDPOINT",
-    default="http://127.0.0.1:8000/openid/jwks/",
+    default="http://iyou-idp.identity.svc.cluster.local:8000/openid/jwks/",
 )
 
-# Callback must use 127.0.0.1 to match session domain
-OIDC_RP_CALLBACK_URL = "http://127.0.0.1:8002/oidc/callback/"
+# Callback must use the same origin as the browser-facing deployment
+OIDC_RP_CALLBACK_URL = env.str(
+    "OIDC_RP_CALLBACK_URL",
+    default="https://iyou.me/oidc/callback/",
+)
 
 # Treat sub claim as DID — map directly to username
 OIDC_USERNAME_ALGO = lambda claims: claims.get("sub")
