@@ -8,6 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml .
 RUN uv sync --no-dev
 COPY . .
+ENV POLY_DEBUG=false
 RUN uv run python manage.py collectstatic --noinput
 
 # Stage 2: Run
