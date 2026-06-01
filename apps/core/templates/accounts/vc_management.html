@@ -116,7 +116,7 @@
             return new Promise(function (resolve, reject) {
                 var ws;
                 try {
-                    ws = new WebSocket("ws://127.0.0.1:9001");
+                    ws = new WebSocket("{{ idp_home_ws_url }}");
                 } catch (e) {
                     reject(new Error("Cannot connect to bridge: " + e.message));
                     return;

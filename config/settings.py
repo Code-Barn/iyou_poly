@@ -138,6 +138,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.core.context_processors.satellite_urls",
             ],
         },
     },
@@ -281,3 +282,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://wun.iyou.me",
     "https://hive.iyou.me",
 ]
+
+# Mesh satellite URLs
+IDP_HOME_URL = env.str("IDP_HOME_URL", default="https://home.iyou.me/")
+IDP_HOME_WS_URL = env.str("IDP_HOME_WS_URL", default="wss://home.iyou.me:9001/")
