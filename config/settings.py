@@ -274,7 +274,10 @@ NOSTR_RELAYS = env.list("NOSTR_RELAYS")
 NOSTR_ENABLED = bool(NOSTR_PRIVATE_KEY)
 
 # Cross-Origin Resource Sharing — authorize iyou_wun satellite (port 8001)
+# and production apps (wun.iyou.me, hive.iyou.me)
 CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8001",
     "http://localhost:8001",
+    "https://wun.iyou.me",
+    "https://hive.iyou.me",
 ]
