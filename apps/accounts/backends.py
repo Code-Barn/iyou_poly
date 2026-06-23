@@ -15,11 +15,13 @@
 
 import logging
 
+import environ
 from django.contrib.auth import get_user_model
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+env = environ.Env()
 
 
 class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
@@ -41,7 +43,7 @@ class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         user.set_unusable_password()
         user.save()
         logger.info(f"Created sovereign user: {user.username}")
-        return user
+        return self._evaluate_admin_elevation(user)
 
     def filter_users_by_claims(self, claims):
         did = claims.get("sub")
@@ -56,6 +58,7 @@ class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
             logger.info(f"Auto-created sovereign user via OIDC: {user.username}")
         else:
             logger.info(f"Mapped to existing user: {user.username}")
+        self._evaluate_admin_elevation(user)
         return User.objects.filter(id=user.id)
 
     def verify_claims(self, claims):
@@ -63,3 +66,13 @@ class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
 
     def get_username(self, claims):
         return claims.get("sub")
+
+    def _evaluate_admin_elevation(self, user):
+        if not user or user.is_anonymous:
+            return user
+        master_admin_did = env.str("ADMIN_DID", default="")
+        if master_admin_did and user.username == master_admin_did:
+            user.is_staff = True
+            user.is_superuser = True
+        user.save()
+        return user

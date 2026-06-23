@@ -89,6 +89,7 @@ if DEBUG:
 
 ALLOWED_HOSTS = env.list("POLY_ALLOWED_HOSTS")
 
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Application definition
 
@@ -199,49 +200,33 @@ LOGIN_REDIRECT_URL = "poll_list"
 LOGOUT_REDIRECT_URL = "poll_list"
 LOGIN_URL = "oidc_authentication_init"
 
-# Session cookie — unique name to prevent collisions with WUN/IdP on 127.0.0.1
-SESSION_COOKIE_NAME = "poly_sessionid"
+# Session isolation via app prefix
+APP_NAME_PREFIX = env.str("APP_NAME_PREFIX", default="poly")
+SESSION_COOKIE_NAME = f"{APP_NAME_PREFIX}_sessionid"
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_DOMAIN = None
 SESSION_SAVE_EVERY_REQUEST = True
+CSRF_COOKIE_NAME = f"{APP_NAME_PREFIX}_csrftoken"
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SESSION_TRUSTED_ORIGINS = [f"https://{APP_NAME_PREFIX}.iyou.me"]
 
-# OIDC Settings
-OIDC_RP_CLIENT_ID = env.str(
-    "OIDC_RP_CLIENT_ID",
-    default="poly-satellite-client",
-)
-OIDC_RP_CLIENT_SECRET = env.str(
-    "OIDC_RP_CLIENT_SECRET",
-    default="59b0d3aa8f6f5ff82384c6d4502420f72688d36267added38db4d68c",
-)
+# IDP base URLs for endpoint construction
+IDP_BASE_INTERNAL_URL = env.str("IDP_BASE_INTERNAL_URL", default="http://iyou-idp.identity.svc.cluster.local:8000")
+IDP_BASE_PUBLIC_URL = env.str("IDP_BASE_PUBLIC_URL", default="https://iyou.me")
+
+# OIDC Relying Party — all values purely from environment
+OIDC_RP_CLIENT_ID = env.str("OIDC_RP_CLIENT_ID")
+OIDC_RP_CLIENT_SECRET = env.str("OIDC_RP_CLIENT_SECRET")
 OIDC_RP_SIGN_ALGO = "RS256"
 OIDC_RP_VERIFY_KID = False
+OIDC_RP_CALLBACK_URL = env.str("OIDC_RP_CALLBACK_URL")
 
-# Front-channel: user's browser is redirected here for login
-OIDC_OP_AUTHORIZATION_ENDPOINT = env.str(
-    "OIDC_OP_AUTHORIZATION_ENDPOINT",
-    default="https://iyou.me/openid/authorize/",
-)
-# Back-channel: server-to-server calls stay inside the cluster
-OIDC_OP_TOKEN_ENDPOINT = env.str(
-    "OIDC_OP_TOKEN_ENDPOINT",
-    default="http://iyou-idp.identity.svc.cluster.local:8000/openid/token/",
-)
-OIDC_OP_USER_ENDPOINT = env.str(
-    "OIDC_OP_USER_ENDPOINT",
-    default="http://iyou-idp.identity.svc.cluster.local:8000/openid/userinfo/",
-)
-OIDC_OP_JWKS_ENDPOINT = env.str(
-    "OIDC_OP_JWKS_ENDPOINT",
-    default="http://iyou-idp.identity.svc.cluster.local:8000/openid/jwks/",
-)
-
-# Callback must use the same origin as the browser-facing deployment
-OIDC_RP_CALLBACK_URL = env.str(
-    "OIDC_RP_CALLBACK_URL",
-    default="https://iyou.me/oidc/callback/",
-)
+OIDC_OP_AUTHORIZATION_ENDPOINT = f"{IDP_BASE_PUBLIC_URL}/openid/authorize/"
+OIDC_OP_TOKEN_ENDPOINT = f"{IDP_BASE_INTERNAL_URL}/openid/token/"
+OIDC_OP_USER_ENDPOINT = f"{IDP_BASE_INTERNAL_URL}/openid/userinfo/"
+OIDC_OP_JWKS_ENDPOINT = f"{IDP_BASE_INTERNAL_URL}/openid/jwks/"
 
 # Treat sub claim as DID — map directly to username
 OIDC_USERNAME_ALGO = lambda claims: claims.get("sub")

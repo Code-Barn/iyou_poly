@@ -9,6 +9,7 @@ COPY pyproject.toml .
 RUN uv sync --no-dev
 COPY . .
 ENV POLY_DEBUG=false
+ENV OIDC_RP_CLIENT_ID=builder OIDC_RP_CLIENT_SECRET=builder OIDC_RP_CALLBACK_URL=builder
 RUN uv run python manage.py collectstatic --noinput
 
 # Stage 2: Run
