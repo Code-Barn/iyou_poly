@@ -49,7 +49,7 @@ urlpatterns = [
     path("", poll_list, name="poll_list"),
     path("", include("apps.core.urls")),
     path("", include("apps.poller.urls")),
-    path("oidc/", include("mozilla_django_oidc.urls")),
+    path("", include("apps.accounts.urls")),
     path("login/", RedirectView.as_view(pattern_name="oidc_authentication_init"), name="login"),
     path("logout/", RedirectView.as_view(pattern_name="oidc_logout"), name="logout"),
     path("credentials/", VCManagementView.as_view(), name="vc_management"),

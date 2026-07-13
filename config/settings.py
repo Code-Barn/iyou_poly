@@ -163,7 +163,7 @@ DATABASES = {
 AUTH_PASSWORD_VALIDATORS = []
 
 AUTHENTICATION_BACKENDS = [
-    "apps.accounts.backends.MyOIDCAuthenticationBackend",
+    "apps.accounts.utils.auth_pkce.PKCEAuthenticationBackend",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -216,12 +216,12 @@ SESSION_TRUSTED_ORIGINS = [f"https://{APP_NAME_PREFIX}.iyou.me"]
 IDP_BASE_INTERNAL_URL = env.str("IDP_BASE_INTERNAL_URL", default="http://iyou-idp.identity.svc.cluster.local:8000")
 IDP_BASE_PUBLIC_URL = env.str("IDP_BASE_PUBLIC_URL", default="https://iyou.me")
 
-# OIDC Relying Party — all values purely from environment
-OIDC_RP_CLIENT_ID = env.str("OIDC_RP_CLIENT_ID")
-OIDC_RP_CLIENT_SECRET = env.str("OIDC_RP_CLIENT_SECRET")
+# OIDC Relying Party — values from environment with safe PKCE defaults
+OIDC_RP_CLIENT_ID = env.str("OIDC_RP_CLIENT_ID", default="")
+OIDC_RP_CLIENT_SECRET = env.str("OIDC_RP_CLIENT_SECRET", default="")
 OIDC_RP_SIGN_ALGO = "RS256"
 OIDC_RP_VERIFY_KID = False
-OIDC_RP_CALLBACK_URL = env.str("OIDC_RP_CALLBACK_URL")
+OIDC_RP_CALLBACK_URL = env.str("OIDC_RP_CALLBACK_URL", default="/oidc/callback/")
 
 OIDC_OP_AUTHORIZATION_ENDPOINT = f"{IDP_BASE_PUBLIC_URL}/openid/authorize/"
 OIDC_OP_TOKEN_ENDPOINT = f"{IDP_BASE_INTERNAL_URL}/openid/token/"
