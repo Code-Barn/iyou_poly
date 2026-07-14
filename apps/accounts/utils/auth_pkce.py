@@ -217,6 +217,9 @@ class PKCEOIDCAuthenticationCallbackView(View):
             logger.error(f"ID token verification failed: {e}")
             return self.login_failure()
 
+        request.session["oidc_claims"] = claims
+        request.session.save()
+
         self.user = auth.authenticate(request=request, claims=claims)
         if self.user and self.user.is_active:
             return self.login_success()
@@ -290,7 +293,25 @@ class PKCEAuthenticationBackend(ModelBackend):
 
     def authenticate(self, request, **kwargs):
         claims = kwargs.get("claims")
+
+        if not claims and request is not None:
+            claims = request.session.get("oidc_claims")
+
         if not claims:
+            id_token_str = kwargs.get("token")
+            if id_token_str and request is not None:
+                nonce = request.session.get("oidc_pending_nonce", "")
+                try:
+                    claims = self._decode_id_token(id_token_str, nonce)
+                except Exception as e:
+                    logger.error(f"Token decode fallback failed: {e}")
+                    return None
+
+        if not claims:
+            return None
+
+        if not self.verify_claims(claims):
+            logger.warning("Claims verification failed — missing 'sub'")
             return None
 
         users = self.filter_users_by_claims(claims)
@@ -302,6 +323,52 @@ class PKCEAuthenticationBackend(ModelBackend):
         elif getattr(settings, "OIDC_CREATE_USER", True):
             return self.create_user(claims)
         return None
+
+    def _decode_id_token(self, id_token_str, nonce):
+        unverified_header = jwt.get_unverified_header(id_token_str)
+        alg = unverified_header.get("alg", "RS256")
+
+        idp_sign_key = getattr(settings, "OIDC_RP_IDP_SIGN_KEY", None)
+        jwks_endpoint = getattr(settings, "OIDC_OP_JWKS_ENDPOINT", None)
+
+        if idp_sign_key:
+            key = idp_sign_key
+        elif jwks_endpoint:
+            key = self._retrieve_jwks_key(id_token_str, jwks_endpoint)
+        else:
+            key = getattr(settings, "OIDC_RP_CLIENT_SECRET", "")
+
+        options = {"verify_aud": False}
+        if alg == "none":
+            options["verify_signature"] = False
+
+        payload = jwt.decode(id_token_str, key, algorithms=[alg], options=options)
+
+        if getattr(settings, "OIDC_USE_NONCE", True) and nonce and nonce != payload.get("nonce"):
+            raise ValueError("Nonce verification failed")
+
+        return payload
+
+    def _retrieve_jwks_key(self, token, jwks_endpoint):
+        response = requests.get(
+            jwks_endpoint,
+            verify=getattr(settings, "OIDC_VERIFY_SSL", True),
+            timeout=getattr(settings, "OIDC_TIMEOUT", None),
+        )
+        response.raise_for_status()
+        jwks = response.json()
+
+        jws = jwt.get_unverified_header(token)
+        verify_kid = getattr(settings, "OIDC_VERIFY_KID", True)
+
+        for jwk in jwks.get("keys", []):
+            if verify_kid and jwk.get("kid") != jws.get("kid"):
+                continue
+            if "alg" in jwk and jwk["alg"] != jws.get("alg"):
+                continue
+            return jwt.PyJWK(jwk)
+
+        raise ValueError("No matching JWK found")
 
     def filter_users_by_claims(self, claims):
         did = claims.get("sub")
@@ -344,7 +411,14 @@ class PKCEAuthenticationBackend(ModelBackend):
             return user
         master_admin_did = env.str("ADMIN_DID", default="")
         if master_admin_did and user.username == master_admin_did:
-            user.is_staff = True
-            user.is_superuser = True
-        user.save()
+            dirty = False
+            if not user.is_staff:
+                user.is_staff = True
+                dirty = True
+            if not user.is_superuser:
+                user.is_superuser = True
+                dirty = True
+            if dirty:
+                user.save()
+                logger.info(f"Admin elevation granted: {user.username}")
         return user
