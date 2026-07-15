@@ -36,10 +36,10 @@ from django.contrib import auth
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.http import HttpResponseRedirect
-from django.shortcuts import resolve_url
 from django.urls import reverse
 from django.utils.crypto import get_random_string
 from django.views.generic import View
+from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -104,50 +104,23 @@ class PKCEOIDCAuthenticationRequestView(View):
         return HttpResponseRedirect(redirect_url)
 
 
-class PKCEOIDCAuthenticationCallbackView(View):
+class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
     """OIDC callback that performs back-channel token exchange with PKCE verifier.
 
-    Retrieves the code_verifier from the session state, dynamically appends it
-    to the POST token exchange payload, decodes the id_token, and delegates
-    user lookup to the authentication backend via auth.authenticate().
+    Inherits standardised OIDC lifecycle from mozilla-django-oidc and injects
+    the PKCE code_verifier into backend kwargs via get_backend_kwargs().
     """
 
-    http_method_names = ["get"]
-
-    @property
-    def failure_url(self):
-        return getattr(settings, "LOGIN_REDIRECT_URL_FAILURE", "/")
-
-    @property
-    def success_url(self):
-        next_url = self.request.session.get("oidc_login_next", None)
-        return next_url or resolve_url(
-            getattr(settings, "LOGIN_REDIRECT_URL", "/")
-        )
-
-    def login_failure(self):
-        return HttpResponseRedirect(self.failure_url)
-
-    def login_success(self):
-        request_user = getattr(self.request, "user", None)
-        if (
-            not request_user
-            or not request_user.is_authenticated
-            or request_user != self.user
-        ):
-            auth.login(self.request, self.user)
-
-        expiration_interval = getattr(
-            settings, "OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS", 60 * 15
-        )
-        self.request.session["oidc_id_token_expiration"] = (
-            time.time() + expiration_interval
-        )
-        return HttpResponseRedirect(self.success_url)
+    def get_backend_kwargs(self, request):
+        kwargs = {
+            "request": request,
+        }
+        code_verifier = request.session.pop("pkce_code_verifier", None)
+        if code_verifier:
+            kwargs["code_verifier"] = code_verifier
+        return kwargs
 
     def get(self, request):
-        self.request = request
-
         if request.GET.get("error"):
             if (
                 "state" in request.GET
@@ -171,107 +144,20 @@ class PKCEOIDCAuthenticationCallbackView(View):
         if state not in request.session["oidc_states"]:
             return self.login_failure()
 
-        code_verifier = request.session["oidc_states"][state].get("code_verifier")
         nonce = request.session["oidc_states"][state]["nonce"]
         del request.session["oidc_states"][state]
         request.session.save()
 
         request.session = request.session.__class__(request.session.session_key)
 
-        code = request.GET["code"]
-        redirect_uri = request.build_absolute_uri(
-            reverse("oidc_authentication_callback")
-        )
+        kwargs = self.get_backend_kwargs(request)
+        kwargs["nonce"] = nonce
 
-        token_payload = {
-            "client_id": getattr(settings, "OIDC_RP_CLIENT_ID", ""),
-            "client_secret": getattr(settings, "OIDC_RP_CLIENT_SECRET", ""),
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-        }
-        if code_verifier is not None:
-            token_payload["code_verifier"] = code_verifier
-
-        try:
-            token_response = requests.post(
-                settings.OIDC_OP_TOKEN_ENDPOINT,
-                data=token_payload,
-                verify=getattr(settings, "OIDC_VERIFY_SSL", True),
-                timeout=getattr(settings, "OIDC_TIMEOUT", None),
-            )
-            token_response.raise_for_status()
-            token_info = token_response.json()
-        except Exception as e:
-            logger.error(f"OIDC token exchange failed: {e}")
-            return self.login_failure()
-
-        id_token_str = token_info.get("id_token")
-        if not id_token_str:
-            logger.error("No id_token in token response")
-            return self.login_failure()
-
-        try:
-            claims = self._verify_id_token(id_token_str, nonce)
-        except Exception as e:
-            logger.error(f"ID token verification failed: {e}")
-            return self.login_failure()
-
-        request.session["oidc_claims"] = claims
-        request.session.save()
-
-        self.user = auth.authenticate(request=request, claims=claims)
+        self.user = auth.authenticate(**kwargs)
         if self.user and self.user.is_active:
             return self.login_success()
 
         return self.login_failure()
-
-    def _verify_id_token(self, id_token_str, nonce):
-        unverified_header = jwt.get_unverified_header(id_token_str)
-        alg = unverified_header.get("alg", "RS256")
-
-        jwks_endpoint = getattr(settings, "OIDC_OP_JWKS_ENDPOINT", None)
-        idp_sign_key = getattr(settings, "OIDC_RP_IDP_SIGN_KEY", None)
-
-        if idp_sign_key:
-            key = idp_sign_key
-        elif jwks_endpoint:
-            key = self._retrieve_jwks_key(id_token_str, jwks_endpoint)
-        else:
-            key = getattr(settings, "OIDC_RP_CLIENT_SECRET", "")
-
-        options = {"verify_aud": False}
-        if alg == "none":
-            options["verify_signature"] = False
-
-        payload = jwt.decode(id_token_str, key, algorithms=[alg], options=options)
-
-        stored_nonce = payload.get("nonce")
-        if getattr(settings, "OIDC_USE_NONCE", True) and nonce != stored_nonce:
-            raise ValueError("Nonce verification failed")
-
-        return payload
-
-    def _retrieve_jwks_key(self, token, jwks_endpoint):
-        response = requests.get(
-            jwks_endpoint,
-            verify=getattr(settings, "OIDC_VERIFY_SSL", True),
-            timeout=getattr(settings, "OIDC_TIMEOUT", None),
-        )
-        response.raise_for_status()
-        jwks = response.json()
-
-        jws = jwt.get_unverified_header(token)
-        verify_kid = getattr(settings, "OIDC_VERIFY_KID", True)
-
-        for jwk in jwks.get("keys", []):
-            if verify_kid and jwk.get("kid") != jws.get("kid"):
-                continue
-            if "alg" in jwk and jwk["alg"] != jws.get("alg"):
-                continue
-            return jwt.PyJWK(jwk)
-
-        raise ValueError("No matching JWK found")
 
 
 class PKCEAuthenticationBackend(ModelBackend):
@@ -296,6 +182,10 @@ class PKCEAuthenticationBackend(ModelBackend):
 
         if not claims and request is not None:
             claims = request.session.get("oidc_claims")
+
+        code_verifier = kwargs.get("code_verifier")
+        if not claims and code_verifier and request is not None:
+            claims = self._exchange_code_for_claims(request, code_verifier)
 
         if not claims:
             id_token_str = kwargs.get("token")
@@ -323,6 +213,59 @@ class PKCEAuthenticationBackend(ModelBackend):
         elif getattr(settings, "OIDC_CREATE_USER", True):
             return self.create_user(claims)
         return None
+
+    def _exchange_code_for_claims(self, request, code_verifier):
+        code = request.GET.get("code")
+        if not code:
+            logger.error("No authorization code in request")
+            return None
+
+        state = request.GET.get("state", "")
+        nonce = ""
+        if "oidc_states" in request.session and state in request.session["oidc_states"]:
+            nonce = request.session["oidc_states"][state].get("nonce", "")
+
+        redirect_uri = request.build_absolute_uri(
+            reverse("oidc_authentication_callback")
+        )
+
+        token_payload = {
+            "client_id": getattr(settings, "OIDC_RP_CLIENT_ID", ""),
+            "client_secret": getattr(settings, "OIDC_RP_CLIENT_SECRET", ""),
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }
+        if code_verifier:
+            token_payload["code_verifier"] = code_verifier
+
+        try:
+            token_response = requests.post(
+                settings.OIDC_OP_TOKEN_ENDPOINT,
+                data=token_payload,
+                verify=getattr(settings, "OIDC_VERIFY_SSL", True),
+                timeout=getattr(settings, "OIDC_TIMEOUT", None),
+            )
+            token_response.raise_for_status()
+            token_info = token_response.json()
+        except Exception as e:
+            logger.error(f"OIDC token exchange failed: {e}")
+            return None
+
+        id_token_str = token_info.get("id_token")
+        if not id_token_str:
+            logger.error("No id_token in token response")
+            return None
+
+        try:
+            claims = self._decode_id_token(id_token_str, nonce)
+        except Exception as e:
+            logger.error(f"ID token verification failed: {e}")
+            return None
+
+        request.session["oidc_claims"] = claims
+        request.session.save()
+        return claims
 
     def _decode_id_token(self, id_token_str, nonce):
         unverified_header = jwt.get_unverified_header(id_token_str)
