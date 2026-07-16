@@ -29,9 +29,10 @@ Current state: Three-tier claims resolution loop + dirty-flag elevation in `apps
 - [ ] **Dirty-flag pattern:** Verify `user.save()` only executes when staff/superuser state actually changes.
 - [ ] **Exception guard:** Verify `try/except requests.RequestException` on all back-channel HTTP calls.
 - [ ] **Secret stripping:** Remove `OIDC_RP_CLIENT_SECRET` from container manifests (Helm values.yaml, Docker Compose .env).
+- [ ] **Rule 5 — Logout View:** Add `path("oidc/logout/", OIDCLogoutView.as_view(), name="oidc_logout")` to config/urls.py. Set `LOGOUT_REDIRECT_URL = "/"` in settings.
 
 ## Layer 2 — App-Specific
 
-- [ ]
+- [ ] **Ecosystem Doc Organization:** Standardize repo layout to match iyou_wun precedent — root: `AGENT.md`, `README.md`; `docs/`: `DEVELOPER_GUIDE.md`, `DESIGN_DOC.md`, `TODO.md`, `ecosystem_shared/`, `archive/`.
 
 ---
