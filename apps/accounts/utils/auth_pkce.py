@@ -32,7 +32,6 @@ import environ
 import jwt
 import requests
 from django.conf import settings
-from django.contrib import auth
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.http import HttpResponseRedirect
@@ -105,59 +104,14 @@ class PKCEOIDCAuthenticationRequestView(View):
 
 
 class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
-    """OIDC callback that performs back-channel token exchange with PKCE verifier.
+    """OIDC callback that injects the PKCE code_verifier into backend kwargs."""
 
-    Inherits standardised OIDC lifecycle from mozilla-django-oidc and injects
-    the PKCE code_verifier into backend kwargs via get_backend_kwargs().
-    """
-
-    def get_backend_kwargs(self, request):
-        kwargs = {
-            "request": request,
-        }
+    def get_backend_kwargs(self, request, **kwargs):
+        kwargs = super().get_backend_kwargs(request, **kwargs)
         code_verifier = request.session.pop("pkce_code_verifier", None)
         if code_verifier:
             kwargs["code_verifier"] = code_verifier
         return kwargs
-
-    def get(self, request):
-        if request.GET.get("error"):
-            if (
-                "state" in request.GET
-                and "oidc_states" in request.session
-                and request.GET["state"] in request.session["oidc_states"]
-            ):
-                del request.session["oidc_states"][request.GET["state"]]
-                request.session.save()
-
-            if request.user.is_authenticated:
-                auth.logout(request)
-            return self.login_failure()
-
-        if "code" not in request.GET or "state" not in request.GET:
-            return self.login_failure()
-
-        if "oidc_states" not in request.session:
-            return self.login_failure()
-
-        state = request.GET["state"]
-        if state not in request.session["oidc_states"]:
-            return self.login_failure()
-
-        nonce = request.session["oidc_states"][state]["nonce"]
-        del request.session["oidc_states"][state]
-        request.session.save()
-
-        request.session = request.session.__class__(request.session.session_key)
-
-        kwargs = self.get_backend_kwargs(request)
-        kwargs["nonce"] = nonce
-
-        self.user = auth.authenticate(**kwargs)
-        if self.user and self.user.is_active:
-            return self.login_success()
-
-        return self.login_failure()
 
 
 class PKCEAuthenticationBackend(ModelBackend):
