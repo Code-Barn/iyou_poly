@@ -1,48 +1,54 @@
-# Copyright (C) 2026 David Byers dba Byers Brands
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+"""
+Legacy OIDC backend — kept for test compatibility.
+
+This module is superseded by apps.accounts.utils.auth_pkce which implements
+the full canonical PKCE flow. MyOIDCAuthenticationBackend here is retained
+only so that existing test_auth.py imports continue to resolve. It does NOT
+participate in AUTHENTICATION_BACKENDS (that points to auth_pkce.PKCEAuthenticationBackend).
+"""
 
 import logging
 
-import environ
 from django.contrib.auth import get_user_model
-from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+from django.contrib.auth.backends import ModelBackend
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-env = environ.Env()
 
 
-class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
-    """
-    OIDC backend that maps the 'sub' claim (DID) directly as the Django username.
-    Mirrors iyou_wun's authentication pattern for mesh-wide sovereign identity.
+class MyOIDCAuthenticationBackend(ModelBackend):
+    """OIDC backend that maps the 'sub' claim (DID) directly as the Django username.
+
+    Inherits from ModelBackend instead of OIDCAuthenticationBackend to avoid
+    OIDC_RP_CLIENT_SECRET enforcement (Rule 2). This class is retained for
+    test compatibility only — production auth uses auth_pkce.PKCEAuthenticationBackend.
     """
 
     def authenticate(self, request, **kwargs):
-        try:
-            return super().authenticate(request, **kwargs)
-        except Exception as e:
-            logger.error(f"OIDC authenticate error: {e}", exc_info=True)
-            raise
+        claims = kwargs.get("claims")
+        if not claims:
+            return None
+
+        if not self.verify_claims(claims):
+            logger.warning("Claims verification failed — missing 'sub'")
+            return None
+
+        users = self.filter_users_by_claims(claims)
+        if len(users) == 1:
+            return self.update_user(users[0], claims)
+        elif len(users) > 1:
+            logger.warning("Multiple users returned for claims")
+            return None
+        elif getattr(self, "create_users", True):
+            return self.create_user(claims)
+        return None
 
     def create_user(self, claims):
         user = User.objects.create_user(username=claims.get("sub"))
         user.is_active = True
         user.set_unusable_password()
         user.save()
-        logger.info(f"Created sovereign user: {user.username}")
+        logger.info("Created sovereign user: %s", user.username)
         return self._evaluate_admin_elevation(user)
 
     def filter_users_by_claims(self, claims):
@@ -55,9 +61,9 @@ class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
             user.set_unusable_password()
             user.is_active = True
             user.save()
-            logger.info(f"Auto-created sovereign user via OIDC: {user.username}")
+            logger.info("Auto-created sovereign user via OIDC: %s", user.username)
         else:
-            logger.info(f"Mapped to existing user: {user.username}")
+            logger.info("Mapped to existing user: %s", user.username)
         self._evaluate_admin_elevation(user)
         return User.objects.filter(id=user.id)
 
@@ -70,9 +76,31 @@ class MyOIDCAuthenticationBackend(OIDCAuthenticationBackend):
     def _evaluate_admin_elevation(self, user):
         if not user or user.is_anonymous:
             return user
-        master_admin_did = env.str("ADMIN_DID", default="")
-        if master_admin_did and user.username == master_admin_did:
+        from django.conf import settings
+
+        target_admin_did = getattr(settings, "ADMIN_DID", None)
+        if not target_admin_did or user.username != target_admin_did:
+            return user
+        dirty = False
+        if not user.is_staff:
             user.is_staff = True
+            dirty = True
+        if not user.is_superuser:
             user.is_superuser = True
-        user.save()
+            dirty = True
+        if user.has_usable_password():
+            user.set_unusable_password()
+            dirty = True
+        if dirty:
+            user.save(update_fields=["is_staff", "is_superuser", "password"])
+            logger.info("Admin elevation granted: %s", user.username)
         return user
+
+    def update_user(self, user, claims):
+        return user
+
+    def get_user(self, user_id):
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return None

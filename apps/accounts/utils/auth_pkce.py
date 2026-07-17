@@ -1,321 +1,355 @@
-# Copyright (C) 2026 David Byers dba Byers Brands
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
-
 """
 Session-backed PKCE mechanics for OIDC authentication.
 
-Bypasses mozilla-django-oidc configuration requirements by implementing
-PKCE code challenge/verification directly, with safe defaults for all
-configuration variables.
+Eliminates OIDC_RP_CLIENT_SECRET by replacing it with ephemeral,
+per-request code verifiers per RFC 7636. The verifier lives in the
+encrypted session cookie for the duration of the OAuth flow and is
+consumed exactly once on callback.
+
+Drop-in for mozilla_django_oidc 5.x — no library settings required
+beyond the standard OIDC_RP_CLIENT_ID / endpoint URLs.
+
+Requirements (settings.py):
+    SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+    OIDC_RP_CLIENT_ID = "<your-app-client-id>"
+    OIDC_RP_SCOPES = "openid profile email"
+    OIDC_OP_AUTHORIZATION_ENDPOINT = "https://iyou.me/openid/authorize/"
+    OIDC_OP_TOKEN_ENDPOINT        = "https://iyou.me/openid/token/"
+    OIDC_OP_USER_ENDPOINT         = "https://iyou.me/openid/userinfo/"
+    OIDC_AUTHENTICATION_CALLBACK_URL = "oidc_authentication_callback"
+    LOGIN_REDIRECT_URL            = "/"
+    LOGIN_REDIRECT_URL_FAILURE    = "/"
+    ADMIN_DID = env.str("ADMIN_DID", default="")
 """
 
-import base64
+from __future__ import annotations
+
 import hashlib
 import logging
 import secrets
-import time
+from base64 import urlsafe_b64encode
 from urllib.parse import urlencode
 
-import environ
-import jwt
 import requests
-from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.backends import ModelBackend
+from django.contrib.auth.backends import BaseBackend
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.crypto import get_random_string
-from django.views.generic import View
-from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
+from mozilla_django_oidc.utils import (
+    absolutify,
+    add_state_and_verifier_and_nonce_to_session,
+)
+from mozilla_django_oidc.views import (
+    OIDCAuthenticationCallbackView,
+    OIDCAuthenticationRequestView,
+)
 
 logger = logging.getLogger(__name__)
-User = get_user_model()
-env = environ.Env()
+
+# Session key constants
+SESSION_KEY_CODE_VERIFIER = "pkce_code_verifier"
+SESSION_KEY_OIDC_LOGIN_NEXT = "oidc_login_next"
 
 
-class PKCEOIDCAuthenticationRequestView(View):
-    """OIDC authentication request with session-backed PKCE code verifier.
+def _generate_code_verifier(length: int = 64) -> str:
+    """Return a cryptographically secure, URL-safe random string."""
+    if not (43 <= length <= 128):
+        raise ValueError(
+            f"code_verifier length must be between 43 and 128, got {length}"
+        )
+    return secrets.token_urlsafe(length)
 
-    Generates a code_verifier via secrets.token_urlsafe(64), derives the
-    code_challenge as Base64URL(SHA256(utf-8(verifier))) with trailing '='
-    stripped, and stores the verifier in request.session['pkce_code_verifier']
-    for retrieval during the callback exchange.
+
+def _compute_code_challenge(verifier: str) -> str:
+    """BASE64URL(SHA256(verifier)) — RFC 7636 section 4.1, S256 method."""
+    hash_bytes = hashlib.sha256(verifier.encode("utf-8")).digest()
+    challenge = urlsafe_b64encode(hash_bytes).decode("utf-8")
+    return challenge.rstrip("=")
+
+
+def _evaluate_sovereign_admin_posture(user):
+    """AUTH_FLOW_SPECIFICATION.md section 6.2 — Canonical admin elevation.
+
+    Elevation only — no demotion. Idempotent: safe to call on every auth ingress.
+    """
+    from django.conf import settings
+
+    target_admin_did = getattr(settings, "ADMIN_DID", None)
+    if not target_admin_did:
+        return user
+
+    if user.username != target_admin_did:
+        return user
+
+    dirty = False
+    if not user.is_staff:
+        user.is_staff = True
+        dirty = True
+    if not user.is_superuser:
+        user.is_superuser = True
+        dirty = True
+    if user.has_usable_password():
+        user.set_unusable_password()
+        dirty = True
+
+    if dirty:
+        user.save(update_fields=["is_staff", "is_superuser", "password"])
+        logger.info("Admin elevation granted: %s", user.username)
+
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Authorization Request — RP -> iyou_idp
+# ---------------------------------------------------------------------------
+
+class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
+    """Generate a PKCE code_verifier, compute its S256 code_challenge,
+    and redirect the user-agent to iyou_idp with both injected into the
+    authorization request parameters.
+
+    The verifier is persisted in request.session['pkce_code_verifier']
+    so it survives the round-trip through the OP without server-side state.
     """
 
     http_method_names = ["get"]
 
     def get(self, request):
-        state = get_random_string(32)
-
-        code_verifier = secrets.token_urlsafe(64)
-        code_challenge = (
-            base64.urlsafe_b64encode(
-                hashlib.sha256(code_verifier.encode("utf-8")).digest()
+        try:
+            state = get_random_string(
+                self.get_settings("OIDC_STATE_SIZE", 32)
             )
-            .rstrip(b"=")
-            .decode("ascii")
-        )
+            redirect_field_name = self.get_settings(
+                "OIDC_REDIRECT_FIELD_NAME", "next"
+            )
+            reverse_url = self.get_settings(
+                "OIDC_AUTHENTICATION_CALLBACK_URL",
+                "oidc_authentication_callback",
+            )
 
-        request.session["pkce_code_verifier"] = code_verifier
+            code_verifier = _generate_code_verifier(
+                self.get_settings("OIDC_PKCE_CODE_VERIFIER_SIZE", 64)
+            )
+            code_challenge = _compute_code_challenge(code_verifier)
 
-        nonce = get_random_string(32)
+            request.session[SESSION_KEY_CODE_VERIFIER] = code_verifier
 
-        params = {
-            "response_type": "code",
-            "scope": getattr(settings, "OIDC_RP_SCOPES", "openid email"),
-            "client_id": getattr(settings, "OIDC_RP_CLIENT_ID", ""),
-            "redirect_uri": request.build_absolute_uri(
-                reverse("oidc_authentication_callback")
-            ),
-            "state": state,
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-            "nonce": nonce,
-        }
+            params = {
+                "response_type": "code",
+                "scope": self.get_settings("OIDC_RP_SCOPES", "openid profile email"),
+                "client_id": self.OIDC_RP_CLIENT_ID,
+                "redirect_uri": absolutify(request, reverse(reverse_url)),
+                "state": state,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            }
 
-        if "oidc_states" not in request.session or not isinstance(
-            request.session["oidc_states"], dict
-        ):
-            request.session["oidc_states"] = {}
+            params.update(self.get_extra_params(request))
 
-        request.session["oidc_states"][state] = {
-            "code_verifier": code_verifier,
-            "nonce": nonce,
-            "added_on": time.time(),
-        }
+            if self.get_settings("OIDC_USE_NONCE", True):
+                nonce = get_random_string(
+                    self.get_settings("OIDC_NONCE_SIZE", 32)
+                )
+                params["nonce"] = nonce
 
-        redirect_url = "{url}?{query}".format(
-            url=settings.OIDC_OP_AUTHORIZATION_ENDPOINT,
-            query=urlencode(params),
-        )
-        return HttpResponseRedirect(redirect_url)
+            add_state_and_verifier_and_nonce_to_session(
+                request, state, params, code_verifier=None
+            )
 
+            next_url = request.GET.get(redirect_field_name, "/")
+            request.session[SESSION_KEY_OIDC_LOGIN_NEXT] = next_url
+            request.session.save()
+
+            query = urlencode(params)
+            redirect_url = f"{self.OIDC_OP_AUTH_ENDPOINT}?{query}"
+            return HttpResponseRedirect(redirect_url)
+
+        except Exception:
+            logger.exception("PKCE auth request failed")
+            return HttpResponseRedirect(
+                self.get_settings("LOGIN_REDIRECT_URL_FAILURE", "/")
+            )
+
+
+# ---------------------------------------------------------------------------
+# Authorization Callback — iyou_idp -> RP
+# ---------------------------------------------------------------------------
 
 class PKCEOIDCAuthenticationCallbackView(OIDCAuthenticationCallbackView):
-    """OIDC callback that injects the PKCE code_verifier into backend kwargs."""
+    """Handle the authorization code callback from iyou_idp.
 
-    def get_backend_kwargs(self, request, **kwargs):
-        kwargs = super().get_backend_kwargs(request, **kwargs)
-        code_verifier = request.session.pop("pkce_code_verifier", None)
-        if code_verifier:
-            kwargs["code_verifier"] = code_verifier
+    Rule 3: Override get_backend_kwargs(), NOT get().
+    The parent get() calls this hook internally and passes the returned
+    dict as keyword arguments to auth.authenticate().
+    """
+
+    def get_backend_kwargs(self, request):
+        kwargs = super().get_backend_kwargs(request)
+
+        code_verifier = request.session.pop(SESSION_KEY_CODE_VERIFIER, None)
+
+        if code_verifier is None:
+            logger.warning(
+                "No pkce_code_verifier in session — possible replay, "
+                "cookie rotation failure, or direct callback access"
+            )
+
+        kwargs.update({"code_verifier": code_verifier})
         return kwargs
 
 
-class PKCEAuthenticationBackend(ModelBackend):
-    """OIDC backend that avoids library initialization constraints.
+# ---------------------------------------------------------------------------
+# Authentication Backend — PKCE-only, no client_secret required
+# ---------------------------------------------------------------------------
 
-    Configuration variables default to an empty string safely unless an
-    explicit key override is discovered in settings or the environment.
+class PKCEAuthenticationBackend(BaseBackend):
+    """Authenticate via iyou_idp using an authorization code + PKCE
+    code_verifier.
+
+    Inherits from django.contrib.auth.Backend to avoid OIDCAuthenticationBackend's
+    __init__ which enforces OIDC_RP_CLIENT_SECRET presence (Rule 2).
+
+    User lookup filters strictly on username=claims.get('sub') (Rule 4).
     """
 
-    def __init__(self, *args, **kwargs):
-        self.OIDC_OP_TOKEN_ENDPOINT = getattr(settings, "OIDC_OP_TOKEN_ENDPOINT", "")
-        self.OIDC_OP_USER_ENDPOINT = getattr(settings, "OIDC_OP_USER_ENDPOINT", "")
-        self.OIDC_OP_JWKS_ENDPOINT = getattr(settings, "OIDC_OP_JWKS_ENDPOINT", None)
-        self.OIDC_RP_CLIENT_ID = getattr(settings, "OIDC_RP_CLIENT_ID", "")
-        self.OIDC_RP_CLIENT_SECRET = getattr(settings, "OIDC_RP_CLIENT_SECRET", "")
-        self.OIDC_RP_SIGN_ALGO = getattr(settings, "OIDC_RP_SIGN_ALGO", "RS256")
-        self.OIDC_RP_IDP_SIGN_KEY = getattr(settings, "OIDC_RP_IDP_SIGN_KEY", None)
-        self.UserModel = get_user_model()
-
-    def authenticate(self, request, **kwargs):
-        claims = kwargs.get("claims")
-
-        if not claims and request is not None:
-            claims = request.session.get("oidc_claims")
-
-        code_verifier = kwargs.get("code_verifier")
-        if not claims and code_verifier and request is not None:
-            claims = self._exchange_code_for_claims(request, code_verifier)
-
-        if not claims:
-            id_token_str = kwargs.get("token")
-            if id_token_str and request is not None:
-                nonce = request.session.get("oidc_pending_nonce", "")
-                try:
-                    claims = self._decode_id_token(id_token_str, nonce)
-                except Exception as e:
-                    logger.error(f"Token decode fallback failed: {e}")
-                    return None
-
-        if not claims:
+    def authenticate(self, request, code_verifier=None, nonce=None, **kwargs):
+        if not request:
             return None
 
-        if not self.verify_claims(claims):
-            logger.warning("Claims verification failed — missing 'sub'")
-            return None
-
-        users = self.filter_users_by_claims(claims)
-        if len(users) == 1:
-            return self.update_user(users[0], claims)
-        elif len(users) > 1:
-            logger.warning("Multiple users returned for claims")
-            return None
-        elif getattr(settings, "OIDC_CREATE_USER", True):
-            return self.create_user(claims)
-        return None
-
-    def _exchange_code_for_claims(self, request, code_verifier):
         code = request.GET.get("code")
-        if not code:
-            logger.error("No authorization code in request")
+        state = request.GET.get("state")
+
+        if not (code and state):
             return None
-
-        state = request.GET.get("state", "")
-        nonce = ""
-        if "oidc_states" in request.session and state in request.session["oidc_states"]:
-            nonce = request.session["oidc_states"][state].get("nonce", "")
-
-        redirect_uri = request.build_absolute_uri(
-            reverse("oidc_authentication_callback")
-        )
 
         token_payload = {
-            "client_id": getattr(settings, "OIDC_RP_CLIENT_ID", ""),
-            "client_secret": getattr(settings, "OIDC_RP_CLIENT_SECRET", ""),
+            "client_id": self._get_setting("OIDC_RP_CLIENT_ID"),
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": absolutify(
+                request,
+                reverse(
+                    self._get_setting(
+                        "OIDC_AUTHENTICATION_CALLBACK_URL",
+                        "oidc_authentication_callback",
+                    )
+                ),
+            ),
         }
-        if code_verifier:
+
+        if code_verifier is not None:
             token_payload["code_verifier"] = code_verifier
 
         try:
-            token_response = requests.post(
-                settings.OIDC_OP_TOKEN_ENDPOINT,
-                data=token_payload,
-                verify=getattr(settings, "OIDC_VERIFY_SSL", True),
-                timeout=getattr(settings, "OIDC_TIMEOUT", None),
-            )
-            token_response.raise_for_status()
-            token_info = token_response.json()
-        except Exception as e:
-            logger.error(f"OIDC token exchange failed: {e}")
+            token_info = self._do_token_request(token_payload)
+        except requests.ConnectionError:
+            logger.error("Connection refused by token endpoint")
+            return None
+        except requests.Timeout:
+            logger.error("Token endpoint timed out")
+            return None
+        except requests.RequestException as exc:
+            logger.error("Token exchange failed: %s", exc)
             return None
 
-        id_token_str = token_info.get("id_token")
-        if not id_token_str:
-            logger.error("No id_token in token response")
+        if "error" in token_info:
+            logger.warning(
+                "Token error [%s]: %s",
+                token_info.get("error"),
+                token_info.get("error_description", "(no description)"),
+            )
             return None
 
         try:
-            claims = self._decode_id_token(id_token_str, nonce)
-        except Exception as e:
-            logger.error(f"ID token verification failed: {e}")
+            user_info = self._do_userinfo_request(token_info)
+        except requests.ConnectionError:
+            logger.error("Connection refused by userinfo endpoint")
+            return None
+        except requests.Timeout:
+            logger.error("UserInfo endpoint timed out")
+            return None
+        except requests.RequestException as exc:
+            logger.error("UserInfo request failed: %s", exc)
             return None
 
-        request.session["oidc_claims"] = claims
-        request.session.save()
-        return claims
-
-    def _decode_id_token(self, id_token_str, nonce):
-        unverified_header = jwt.get_unverified_header(id_token_str)
-        alg = unverified_header.get("alg", "RS256")
-
-        idp_sign_key = getattr(settings, "OIDC_RP_IDP_SIGN_KEY", None)
-        jwks_endpoint = getattr(settings, "OIDC_OP_JWKS_ENDPOINT", None)
-
-        if idp_sign_key:
-            key = idp_sign_key
-        elif jwks_endpoint:
-            key = self._retrieve_jwks_key(id_token_str, jwks_endpoint)
-        else:
-            key = getattr(settings, "OIDC_RP_CLIENT_SECRET", "")
-
-        options = {"verify_aud": False}
-        if alg == "none":
-            options["verify_signature"] = False
-
-        payload = jwt.decode(id_token_str, key, algorithms=[alg], options=options)
-
-        if getattr(settings, "OIDC_USE_NONCE", True) and nonce and nonce != payload.get("nonce"):
-            raise ValueError("Nonce verification failed")
-
-        return payload
-
-    def _retrieve_jwks_key(self, token, jwks_endpoint):
-        response = requests.get(
-            jwks_endpoint,
-            verify=getattr(settings, "OIDC_VERIFY_SSL", True),
-            timeout=getattr(settings, "OIDC_TIMEOUT", None),
-        )
-        response.raise_for_status()
-        jwks = response.json()
-
-        jws = jwt.get_unverified_header(token)
-        verify_kid = getattr(settings, "OIDC_VERIFY_KID", True)
-
-        for jwk in jwks.get("keys", []):
-            if verify_kid and jwk.get("kid") != jws.get("kid"):
-                continue
-            if "alg" in jwk and jwk["alg"] != jws.get("alg"):
-                continue
-            return jwt.PyJWK(jwk)
-
-        raise ValueError("No matching JWK found")
-
-    def filter_users_by_claims(self, claims):
-        did = claims.get("sub")
-        if not did:
-            logger.error("No 'sub' claim found in OIDC token")
-            return self.UserModel.objects.none()
-        user, created = self.UserModel.objects.get_or_create(username=did)
-        if created:
-            user.set_unusable_password()
-            user.is_active = True
-            user.save()
-            logger.info(f"Auto-created sovereign user via PKCE: {user.username}")
-        else:
-            logger.info(f"Mapped to existing user: {user.username}")
-        self._evaluate_admin_elevation(user)
-        return self.UserModel.objects.filter(id=user.id)
-
-    def create_user(self, claims):
-        user = self.UserModel.objects.create_user(username=claims.get("sub"))
-        user.is_active = True
-        user.set_unusable_password()
-        user.save()
-        logger.info(f"Created sovereign user: {user.username}")
-        return self._evaluate_admin_elevation(user)
-
-    def verify_claims(self, claims):
-        return "sub" in claims
-
-    def update_user(self, user, claims):
-        return user
+        return self._get_or_create_user(user_info)
 
     def get_user(self, user_id):
+        User = get_user_model()
         try:
-            return self.UserModel.objects.get(pk=user_id)
-        except self.UserModel.DoesNotExist:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
             return None
 
-    def _evaluate_admin_elevation(self, user):
-        if not user or user.is_anonymous:
-            return user
-        master_admin_did = env.str("ADMIN_DID", default="")
-        if master_admin_did and user.username == master_admin_did:
-            dirty = False
-            if not user.is_staff:
-                user.is_staff = True
-                dirty = True
-            if not user.is_superuser:
-                user.is_superuser = True
-                dirty = True
-            if dirty:
-                user.save()
-                logger.info(f"Admin elevation granted: {user.username}")
+    # ------------------------------------------------------------------
+    # Back-channel HTTP helpers
+    # ------------------------------------------------------------------
+
+    def _do_token_request(self, payload: dict) -> dict:
+        """POST to the OP's token endpoint."""
+        response = requests.post(
+            self._get_setting("OIDC_OP_TOKEN_ENDPOINT"),
+            data=payload,
+            verify=self._get_setting("OIDC_VERIFY_SSL", True),
+            timeout=self._get_setting("OIDC_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def _do_userinfo_request(self, token_info: dict) -> dict:
+        """GET the user profile from the OP's userinfo endpoint."""
+        access_token = token_info.get("access_token")
+        if not access_token:
+            raise ValueError("Token response missing access_token")
+
+        response = requests.get(
+            self._get_setting("OIDC_OP_USER_ENDPOINT"),
+            headers={"Authorization": f"Bearer {access_token}"},
+            verify=self._get_setting("OIDC_VERIFY_SSL", True),
+            timeout=self._get_setting("OIDC_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # ------------------------------------------------------------------
+    # User provisioning — DID-only lookup, no email fallback
+    # ------------------------------------------------------------------
+
+    def _get_or_create_user(self, user_info: dict):
+        """Rule 4: username = sub. section 6.2: Sovereign Admin Posture."""
+        User = get_user_model()
+
+        sub = user_info.get("sub")
+        if not sub:
+            logger.warning("OIDC userinfo missing 'sub' claim")
+            return None
+
+        username = sub
+
+        try:
+            user, created = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    "email": user_info.get("email", ""),
+                    "first_name": user_info.get("given_name", ""),
+                    "last_name": user_info.get("family_name", ""),
+                },
+            )
+        except Exception:
+            logger.exception("User provisioning failed for %s", username)
+            return None
+
+        _evaluate_sovereign_admin_posture(user)
+
         return user
+
+    # ------------------------------------------------------------------
+    # Settings helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_setting(key: str, default=None):
+        from django.conf import settings as _s
+
+        return getattr(_s, key, default)

@@ -90,6 +90,7 @@ if DEBUG:
 ALLOWED_HOSTS = env.list("POLY_ALLOWED_HOSTS")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
 
 # Application definition
 
@@ -197,7 +198,7 @@ MEDIA_ROOT = env.str("POLY_MEDIA_ROOT", default=str(BASE_DIR / "media"))
 
 # Authentication
 LOGIN_REDIRECT_URL = "poll_list"
-LOGOUT_REDIRECT_URL = "poll_list"
+LOGOUT_REDIRECT_URL = "/"
 LOGIN_URL = "oidc_authentication_init"
 
 # Session isolation via app prefix
@@ -218,7 +219,8 @@ IDP_BASE_PUBLIC_URL = env.str("IDP_BASE_PUBLIC_URL", default="https://iyou.me")
 
 # OIDC Relying Party — values from environment with safe PKCE defaults
 OIDC_RP_CLIENT_ID = env.str("OIDC_RP_CLIENT_ID", default="")
-OIDC_RP_CLIENT_SECRET = env.str("OIDC_RP_CLIENT_SECRET", default="")
+OIDC_RP_SCOPES = "openid profile email"
+ADMIN_DID = env.str("ADMIN_DID", default="")
 OIDC_RP_SIGN_ALGO = "RS256"
 OIDC_RP_VERIFY_KID = False
 OIDC_RP_CALLBACK_URL = env.str("OIDC_RP_CALLBACK_URL", default="/oidc/callback/")
@@ -229,7 +231,8 @@ OIDC_OP_USER_ENDPOINT = f"{IDP_BASE_INTERNAL_URL}/openid/userinfo/"
 OIDC_OP_JWKS_ENDPOINT = f"{IDP_BASE_INTERNAL_URL}/openid/jwks/"
 
 # Treat sub claim as DID — map directly to username
-OIDC_USERNAME_ALGO = lambda claims: claims.get("sub")
+def OIDC_USERNAME_ALGO(claims):
+    return claims.get("sub")
 
 # Bypass email requirement — we use DIDs, not email
 OIDC_RP_REQUIRED_CLAIMS = []
