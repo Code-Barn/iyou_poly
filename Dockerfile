@@ -16,8 +16,14 @@ RUN uv run python manage.py collectstatic --noinput
 FROM python:3.13-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app /app
-COPY --from=builder /app/docker-entrypoint.sh /docker-entrypoint.sh
+
+RUN groupadd --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --gid 1001 --no-create-home appuser
+
+COPY --from=builder --chown=appuser:appgroup /app /app
+COPY --chown=appuser:appgroup docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
 ENV PATH="/app/.venv/bin:$PATH"
+USER appuser
 ENTRYPOINT ["/docker-entrypoint.sh"]
