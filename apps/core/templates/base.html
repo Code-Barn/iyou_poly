@@ -10,18 +10,24 @@
     <!-- HTMX for dynamic interactions -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <!-- Tailwind CSS for styling - configured for class-based dark mode -->
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    screens: {
-                        xs: '360px',
+        // Prevent script execution crashes if runtime tailwind variables are unresolved
+        if (typeof tailwind !== 'undefined') {
+            tailwind.config = {
+                darkMode: 'class',
+                theme: {
+                    extend: {
+                        screens: {
+                            xs: '360px',
+                        },
                     },
                 },
-            },
-        };
+            };
+        }
     </script>
+    <!-- REPLACE WITH STATIC TAILWIND CSS - Rule 7 compliance -->
+    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+    <link rel="stylesheet" href="{% static 'css/output.css' %}">
     <!-- CSRF Token for HTMX requests -->
     <meta name="csrf-token" content="{{ csrf_token }}">
 
@@ -127,6 +133,7 @@
 </script>
     {% include "includes/_ecosystem_bar.html" %}
     {% include "includes/_standard_header.html" %}
+    {% include "includes/_tailwind_safe_init.html" %}
     {% include "partials/_nav.html" %}
 
 <script>

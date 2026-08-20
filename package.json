@@ -1,0 +1,12 @@
+{
+  "name": "iyou_poly",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./apps/core/static/css/input.css -o ./apps/core/static/css/output.css --minify",
+    "watch:css": "tailwindcss -i ./apps/core/static/css/input.css -o ./apps/core/static/css/output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}
