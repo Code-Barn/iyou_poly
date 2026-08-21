@@ -177,7 +177,7 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
             # the callback view can validate the return.  The code_verifier
             # lives in its own dedicated session key for clean separation.
             add_state_and_verifier_and_nonce_to_session(
-                request, state, params, code_verifier=None
+                request, state, params, code_verifier=code_verifier
             )
 
             request.session[SESSION_KEY_OIDC_LOGIN_NEXT] = get_next_url(

@@ -154,7 +154,7 @@ class PKCEOIDCAuthenticationRequestView(OIDCAuthenticationRequestView):
                 params["nonce"] = nonce
 
             add_state_and_verifier_and_nonce_to_session(
-                request, state, params, code_verifier=None
+                request, state, params, code_verifier=code_verifier
             )
 
             next_url = request.GET.get(redirect_field_name, "/")

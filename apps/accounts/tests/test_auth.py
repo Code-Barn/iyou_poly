@@ -42,6 +42,36 @@ class OIDCLoginRedirectTests(TestCase):
         self.assertFalse(logged_in)
 
 
+class PKCEOIDCAuthenticationRequestViewTests(TestCase):
+
+    def test_pkce_auth_request_redirects_with_code_challenge(self):
+        from urllib.parse import parse_qs, urlparse
+
+        response = self.client.get(reverse("oidc_authentication_init"))
+        self.assertEqual(response.status_code, 302)
+        parsed = urlparse(response.url)
+        self.assertTrue(
+            response.url.startswith("https://iyou.me/openid/authorize/"),
+            f"Unexpected redirect URL: {response.url}",
+        )
+        query_params = parse_qs(parsed.query)
+        self.assertIn("code_challenge", query_params)
+        self.assertEqual(query_params.get("code_challenge_method"), ["S256"])
+        self.assertIn("state", query_params)
+        self.assertEqual(query_params.get("response_type"), ["code"])
+
+        # Session assertions
+        session = self.client.session
+        self.assertIn("pkce_code_verifier", session)
+        self.assertIn("oidc_states", session)
+        state = query_params["state"][0]
+        self.assertIn(state, session["oidc_states"])
+        self.assertEqual(
+            session["oidc_states"][state]["code_verifier"],
+            session["pkce_code_verifier"],
+        )
+
+
 class OIDCAuthBackendTests(TestCase):
 
     def test_backend_filter_users_by_claims_creates_new(self):
@@ -64,3 +94,4 @@ class OIDCAuthBackendTests(TestCase):
         user = queryset.first()
         self.assertIsNotNone(user)
         self.assertEqual(user.username, "existing-oidc-user")
+
